@@ -1,0 +1,45 @@
+# Firebase
+GoogleService-Info.plist
+google-services.json
+
+# API Keys
+**/APIKeys.swift
+**/Secrets.swift
+
+# Xcode
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+!*.xcworkspace/contents.xcworkspacedata
+*.xcuserstate
+xcuserdata/
+*.xccheckout
+
+# Build
+Build/
+DerivedData/
+*.build/
+
+# Dependencies
+Pods/
+Carthage/
+.swiftpm/
+
+# macOS
+.DS_Store
+
+# Environment
+.env
+*.env
+
+# Certificates & Profiles
+*.p12
+*.mobileprovision
+*.cer
+*.certSigningRequest
+
+# User settings
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
