@@ -17,6 +17,9 @@ final class OpenAIService {
     let apiKey = AppConfig.openAIAPIKey
     private let endpoint = "https://api.openai.com/v1/chat/completions"
     
+    // ✅ NEW: Add rate limiter (10 calls per minute)
+    private let rateLimiter = RateLimiter(maxCallsPerMinute: 10)
+    
     private init() {}
     
     struct ItemAnalysis: Codable {
@@ -29,6 +32,9 @@ final class OpenAIService {
     }
     
     func analyzeItem(image: UIImage) async throws -> ItemAnalysis {
+        // ✅ NEW: Check rate limit FIRST
+        try await rateLimiter.checkRateLimit()
+        
         // Convert image to base64
         guard let imageData = image.jpegData(compressionQuality: 0.8) else {
             throw OpenAIError.invalidImage
@@ -125,6 +131,9 @@ final class OpenAIService {
         totalValue: Decimal,
         dateRange: String?
     ) async throws -> String {
+        // ✅ NEW: Check rate limit FIRST
+        try await rateLimiter.checkRateLimit()
+        
         let apiKey = self.apiKey
         
         guard !apiKey.isEmpty else {
@@ -219,6 +228,9 @@ final class OpenAIService {
         category: String,
         description: String?
     ) async throws -> [String] {
+        // ✅ NEW: Check rate limit FIRST
+        try await rateLimiter.checkRateLimit()
+        
         let apiKey = self.apiKey
         
         guard !apiKey.isEmpty else {
@@ -305,6 +317,11 @@ final class OpenAIService {
         }
         
         throw OpenAIError.invalidResponse
+    }
+    
+    // ✅ NEW: Helper to check remaining API calls
+    func getRemainingCalls() async -> Int {
+        await rateLimiter.getRemainingCalls()
     }
     
     private func extractJSON(from text: String) -> String {
