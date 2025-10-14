@@ -17,8 +17,7 @@ final class CollectionItem {
     var condition: ItemCondition?
     var purchaseDate: Date?
     
-    // ✅ FIXED: Proper transformable attributes for arrays
-    @Attribute(.transformable(by: "NSSecureUnarchiveFromDataTransformerName"))
+    // ✅ REMOVE transformable - SwiftData handles these natively
     var imageURLs: [URL] = []
     
     var isFavorite: Bool
@@ -26,10 +25,10 @@ final class CollectionItem {
     var createdAt: Date
     var updatedAt: Date
     
-    @Attribute(.transformable(by: "NSSecureUnarchiveFromDataTransformerName"))
+    // ✅ REMOVE transformable - SwiftData handles these natively
     var tags: [String] = []
     
-    // Relationship - make it non-optional with default
+    // Relationship
     var collection: CollectionModel
     
     init(

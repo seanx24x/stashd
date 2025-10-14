@@ -19,7 +19,7 @@ struct StashdApp: App {
     let modelContainer: ModelContainer
     
     init() {
-        // ✅ NEW: Validate API keys at launch
+        // ✅ Validate API keys at launch
         AppConfig.validateConfiguration()
         
         // Configure Firebase FIRST - but only here, not in FirebaseService
@@ -56,7 +56,7 @@ struct StashdApp: App {
     
     var body: some Scene {
         WindowGroup {
-            RootView()  // ← This is correct - you use RootView not ContentView
+            RootView()
                 .environment(coordinator)
                 .environment(authService)
                 .modelContainer(modelContainer)
