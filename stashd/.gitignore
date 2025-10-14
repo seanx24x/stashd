@@ -5,6 +5,7 @@ google-services.json
 # API Keys
 **/APIKeys.swift
 **/Secrets.swift
+Config.xcconfig
 
 # Xcode
 *.xcodeproj/*

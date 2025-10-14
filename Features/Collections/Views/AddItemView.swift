@@ -16,7 +16,7 @@ struct AddItemView: View {
     @State private var selectedCondition: ItemCondition?
     @State private var purchasePrice = ""
     @State private var estimatedValue = ""
-    @State private var acquiredDate = Date()
+    @State private var purchaseDate = Date()
     @State private var showDatePicker = false
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -189,7 +189,7 @@ struct AddItemView: View {
     }
 
     private func removeImage(at index: Int) {
-        withAnimation {
+        _ = withAnimation {
             selectedImages.remove(at: index)
         }
     }
@@ -337,7 +337,7 @@ struct AddItemView: View {
     
     private var dateAcquiredPicker: some View {
         VStack(alignment: .leading, spacing: Spacing.xSmall) {
-            Text("Date Acquired (Optional)")
+            Text("Purchase Date (Optional)")
                 .font(.labelMedium)
                 .foregroundStyle(Color.textSecondary)
             
@@ -345,7 +345,7 @@ struct AddItemView: View {
                 showDatePicker.toggle()
             } label: {
                 HStack {
-                    Text(acquiredDate.formatted(date: .abbreviated, time: .omitted))
+                    Text(purchaseDate.formatted(date: .abbreviated, time: .omitted))
                         .foregroundStyle(Color.textPrimary)
                     
                     Spacer()
@@ -365,7 +365,7 @@ struct AddItemView: View {
             if showDatePicker {
                 DatePicker(
                     "",
-                    selection: $acquiredDate,
+                    selection: $purchaseDate,
                     displayedComponents: .date
                 )
                 .datePickerStyle(.graphical)
@@ -410,20 +410,21 @@ struct AddItemView: View {
                 let item = CollectionItem(
                     name: name,
                     collection: collection,
-                    displayOrder: collection.items.count
+                    notes: itemDescription.isEmpty ? nil : itemDescription,
+                    condition: selectedCondition,
+                    purchaseDate: purchaseDate,
+                    imageURLs: imageURLs
                 )
                 
-                item.itemDescription = itemDescription.isEmpty ? nil : itemDescription
-                item.imageURLs = imageURLs
-                item.condition = selectedCondition
-                item.acquiredDate = acquiredDate
+                // Set display order based on current items count
+                item.displayOrder = collection.items.count
                 
-                if let priceValue = Decimal(string: purchasePrice) {
-                    item.purchasePrice = priceValue
-                }
-                
+                // Set estimated value from either field (prioritize current value over purchase price)
                 if let valueEstimate = Decimal(string: estimatedValue) {
                     item.estimatedValue = valueEstimate
+                } else if let purchaseValue = Decimal(string: purchasePrice) {
+                    // If no current value is set, use purchase price as estimated value
+                    item.estimatedValue = purchaseValue
                 }
                 
                 modelContext.insert(item)

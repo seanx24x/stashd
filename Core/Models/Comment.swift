@@ -2,47 +2,31 @@
 //  Comment.swift
 //  stashd
 //
-//  Created by Sean Lynch on 10/9/25.
+//  Created by Sean Lynch
 //
 
-
-// File: Core/Models/Comment.swift
-
-import SwiftData
 import Foundation
+import SwiftData
 
 @Model
 final class Comment {
-    @Attribute(.unique) var id: UUID
-    var text: String
-    
-    @Relationship(deleteRule: .nullify)
-    var author: UserProfile?
-    
-    @Relationship(deleteRule: .nullify)
-    var collection: CollectionModel?
-    
-    @Relationship(deleteRule: .nullify)
-    var parentComment: Comment?
-    
-    @Relationship(deleteRule: .cascade)
-    var replies: [Comment]
-    
+    var id: UUID
+    var content: String
     var createdAt: Date
-    var editedAt: Date?
+    
+    // Relationships
+    var author: UserProfile
+    var collection: CollectionModel
     
     init(
-        id: UUID = UUID(),
-        text: String,
+        content: String,
         author: UserProfile,
-        collection: CollectionModel,
-        createdAt: Date = .now
+        collection: CollectionModel
     ) {
-        self.id = id
-        self.text = text
+        self.id = UUID()
+        self.content = content
         self.author = author
         self.collection = collection
-        self.replies = []
-        self.createdAt = createdAt
+        self.createdAt = Date()
     }
 }

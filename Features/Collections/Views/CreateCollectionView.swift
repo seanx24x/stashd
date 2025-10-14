@@ -5,7 +5,6 @@
 //  Created by Sean Lynch on 10/10/25.
 //
 
-
 // File: Features/Collections/Views/CreateCollectionView.swift
 
 import SwiftUI
@@ -23,6 +22,7 @@ struct CreateCollectionView: View {
     @State private var selectedCategory: CollectionCategory = .other
     @State private var coverImage: UIImage?
     @State private var showError = false
+    @State private var validationError: String? = nil  // ← ADDED
     
     @FocusState private var focusedField: Field?
     
@@ -30,8 +30,9 @@ struct CreateCollectionView: View {
         case title, description
     }
     
+    // ← UPDATED VALIDATION
     var isFormValid: Bool {
-        !title.isEmpty && title.count >= 3
+        title.sanitized.isValidCollectionName
     }
     
     var body: some View {
@@ -56,13 +57,24 @@ struct CreateCollectionView: View {
                     )
                     
                     VStack(spacing: Spacing.large) {
-                        CollectTextField(
-                            title: "Collection Title",
-                            placeholder: "My Vinyl Collection",
-                            text: $title,
-                            icon: "text.alignleft"
-                        )
-                        .focused($focusedField, equals: .title)
+                        // ← TITLE FIELD WITH VALIDATION
+                        VStack(alignment: .leading, spacing: Spacing.xSmall) {
+                            CollectTextField(
+                                title: "Collection Title",
+                                placeholder: "My Vinyl Collection",
+                                text: $title,
+                                icon: "text.alignleft"
+                            )
+                            .focused($focusedField, equals: .title)
+                            
+                            // ← SHOW VALIDATION ERROR
+                            if let error = validationError {
+                                Text(error)
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                                    .transition(.opacity)
+                            }
+                        }
                         
                         VStack(alignment: .leading, spacing: Spacing.xSmall) {
                             Text("Description (Optional)")
@@ -100,44 +112,39 @@ struct CreateCollectionView: View {
                             .font(.bodySmall)
                             .foregroundStyle(.error)
                             .multilineTextAlignment(.center)
+                            .transition(.scale.combined(with: .opacity))
                     }
+                    
+                    Spacer(minLength: Spacing.xxLarge)
                 }
                 .padding(.horizontal, Spacing.large)
+                .padding(.bottom, Spacing.xxLarge)
             }
             .scrollDismissesKeyboard(.interactively)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
+                        HapticManager.shared.light()
                         dismiss()
                     }
                     .foregroundStyle(.textSecondary)
                 }
-                
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") {
-                        createCollection()
-                    }
-                    .foregroundStyle(Color.stashdPrimary)
-                    .fontWeight(.semibold)
-                    .disabled(!isFormValid || viewModel.isLoading)
-                }
             }
-            .overlay {
-                if viewModel.isLoading {
-                    Color.black.opacity(0.3)
-                        .ignoresSafeArea()
-                    
-                    VStack(spacing: Spacing.medium) {
-                        ProgressView()
-                            .tint(.white)
-                            .scaleEffect(1.5)
-                        
-                        Text("Creating collection...")
-                            .font(.bodyLarge)
-                            .foregroundStyle(.white)
-                    }
+            .safeAreaInset(edge: .bottom) {
+                LoadingButton(
+                    title: "Create Collection",
+                    isLoading: viewModel.isLoading
+                ) {
+                    HapticManager.shared.medium()
+                    validateAndCreate()  // ← CHANGED
                 }
+                .disabled(!isFormValid)
+                .opacity(isFormValid ? 1.0 : 0.5)
+                .animation(.easeInOut(duration: 0.2), value: isFormValid)
+                .padding(.horizontal, Spacing.large)
+                .padding(.vertical, Spacing.medium)
+                .background(.ultraThinMaterial)
             }
         }
         .task {
@@ -145,22 +152,63 @@ struct CreateCollectionView: View {
         }
     }
     
-    private func createCollection() {
+    // ← NEW VALIDATION FUNCTION
+    private func validateAndCreate() {
+        // Sanitize inputs
+        let sanitizedTitle = title.sanitized
+        let sanitizedDescription = description.sanitized
+        
+        // Validate title
+        guard sanitizedTitle.isValidCollectionName else {
+            validationError = InputValidator.errorMessage(for: .collectionName)
+            HapticManager.shared.error()
+            return
+        }
+        
+        // Validate description if provided
+        if !sanitizedDescription.isEmpty {
+            guard InputValidator.isValidDescription(sanitizedDescription) else {
+                validationError = InputValidator.errorMessage(for: .description)
+                HapticManager.shared.error()
+                return
+            }
+        }
+        
+        // Clear error
+        validationError = nil
+        
+        // Proceed with creation using sanitized values
+        createCollection(
+            withTitle: sanitizedTitle,
+            description: sanitizedDescription.isEmpty ? nil : sanitizedDescription
+        )
+    }
+    
+    // ← UPDATED CREATE FUNCTION
+    private func createCollection(withTitle title: String, description: String?) {
         guard let currentUser = authService.currentUser else { return }
+        
+        focusedField = nil
         
         Task {
             do {
                 try await viewModel.createCollection(
-                    title: title,
-                    description: description.isEmpty ? nil : description,
+                    title: title,  // Use sanitized title
+                    description: description,  // Use sanitized description
                     category: selectedCategory,
                     coverImage: coverImage,
                     owner: currentUser
                 )
                 
-                dismiss()
+                await MainActor.run {
+                    HapticManager.shared.success()
+                    dismiss()
+                }
             } catch {
-                showError = true
+                await MainActor.run {
+                    showError = true
+                    HapticManager.shared.error()
+                }
             }
         }
     }

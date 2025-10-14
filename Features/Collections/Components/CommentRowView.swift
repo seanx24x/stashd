@@ -23,7 +23,8 @@ struct CommentRowView: View {
                     .fill(Color.surfaceElevated)
                     .frame(width: 32, height: 32)
                     .overlay {
-                        if let author = comment.author, let avatarURL = author.avatarURL {
+                        let author = comment.author
+                        if let avatarURL = author.avatarURL {
                             AsyncImage(url: avatarURL) { image in
                                 image.resizable().scaledToFill()
                             } placeholder: {
@@ -43,18 +44,17 @@ struct CommentRowView: View {
             
             VStack(alignment: .leading, spacing: Spacing.xSmall) {
                 HStack(spacing: Spacing.xSmall) {
-                    if let author = comment.author {
-                        Button(action: onProfileTap) {
-                            Text(author.displayName)
-                                .font(.labelMedium.weight(.semibold))
-                                .foregroundStyle(.textPrimary)
-                        }
-                        .buttonStyle(.plain)
-                        
-                        Text("@\(author.username)")
-                            .font(.labelSmall)
-                            .foregroundStyle(.textSecondary)
+                    let author = comment.author
+                    Button(action: onProfileTap) {
+                        Text(author.displayName)
+                            .font(.labelMedium.weight(.semibold))
+                            .foregroundStyle(.textPrimary)
                     }
+                    .buttonStyle(.plain)
+                    
+                    Text("@\(author.username)")
+                        .font(.labelSmall)
+                        .foregroundStyle(.textSecondary)
                     
                     Text("·")
                         .foregroundStyle(.textTertiary)
@@ -65,7 +65,7 @@ struct CommentRowView: View {
                     
                     Spacer()
                     
-                    if comment.author?.id == currentUserID {
+                    if comment.author.id == currentUserID {
                         Menu {
                             Button("Delete", role: .destructive, action: onDelete)
                         } label: {
@@ -76,7 +76,7 @@ struct CommentRowView: View {
                     }
                 }
                 
-                Text(comment.text)
+                Text(comment.content)
                     .font(.bodyMedium)
                     .foregroundStyle(.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)

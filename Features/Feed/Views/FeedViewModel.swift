@@ -1,16 +1,7 @@
-//
-//  FeedViewModel.swift
-//  stashd
-//
-//  Created by Sean Lynch on 10/10/25.
-//
-
-
 // File: Features/Feed/ViewModels/FeedViewModel.swift
 
 import Foundation
 import SwiftData
-import Observation
 
 @Observable
 @MainActor
@@ -21,6 +12,8 @@ final class FeedViewModel {
     
     private let modelContext: ModelContext
     private let currentUser: UserProfile
+    private let pageSize = 20
+    private var currentPage = 0
     
     init(modelContext: ModelContext, currentUser: UserProfile) {
         self.modelContext = modelContext
@@ -30,26 +23,28 @@ final class FeedViewModel {
     func loadFeed() async {
         isLoading = true
         errorMessage = nil
+        currentPage = 0
         
         do {
-            // Get collections from users you follow + your own
-            let followingIDs = currentUser.following.map { $0.id }
-            var allIDs = followingIDs
-            allIDs.append(currentUser.id)
+            // Get following user IDs + INCLUDE SELF
+            var followingIDs = currentUser.following.map { $0.id }
+            followingIDs.append(currentUser.id)  // ← FIXED: Show your own collections!
             
-            let descriptor = FetchDescriptor<CollectionModel>(
+            // Fetch ALL public collections
+            var descriptor = FetchDescriptor<CollectionModel>(
                 predicate: #Predicate { collection in
                     collection.isPublic == true
                 },
                 sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
             )
+            descriptor.fetchLimit = pageSize
             
             let allCollections = try modelContext.fetch(descriptor)
             
-            // Filter to only show collections from followed users + yourself
+            // Filter by following (including self)
             feedItems = allCollections.filter { collection in
                 guard let ownerID = collection.owner?.id else { return false }
-                return allIDs.contains(ownerID)
+                return followingIDs.contains(ownerID)
             }
             
             isLoading = false
@@ -59,21 +54,51 @@ final class FeedViewModel {
         }
     }
     
+    func loadMore() async {
+        guard !isLoading else { return }
+        
+        isLoading = true
+        currentPage += 1
+        
+        do {
+            var followingIDs = currentUser.following.map { $0.id }
+            followingIDs.append(currentUser.id)  // ← FIXED: Include self here too
+            
+            var descriptor = FetchDescriptor<CollectionModel>(
+                predicate: #Predicate { collection in
+                    collection.isPublic == true
+                },
+                sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
+            )
+            descriptor.fetchLimit = pageSize
+            descriptor.fetchOffset = currentPage * pageSize
+            
+            let allCollections = try modelContext.fetch(descriptor)
+            
+            let moreItems = allCollections.filter { collection in
+                guard let ownerID = collection.owner?.id else { return false }
+                return followingIDs.contains(ownerID)
+            }
+            
+            feedItems.append(contentsOf: moreItems)
+            isLoading = false
+        } catch {
+            isLoading = false
+        }
+    }
+    
+    func isLiked(_ collection: CollectionModel) -> Bool {
+        collection.likes.contains { $0.user.id == currentUser.id }
+    }
+    
     func toggleLike(for collection: CollectionModel) {
-        // Check if already liked
-        if let existingLike = collection.likes.first(where: { $0.user?.id == currentUser.id }) {
-            // Unlike
+        if let existingLike = collection.likes.first(where: { $0.user.id == currentUser.id }) {
             modelContext.delete(existingLike)
         } else {
-            // Like
             let newLike = Like(user: currentUser, collection: collection)
             modelContext.insert(newLike)
         }
         
         try? modelContext.save()
-    }
-    
-    func isLiked(_ collection: CollectionModel) -> Bool {
-        collection.likes.contains { $0.user?.id == currentUser.id }
     }
 }

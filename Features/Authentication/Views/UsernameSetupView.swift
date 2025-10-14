@@ -5,7 +5,6 @@
 //  Created by Sean Lynch on 10/9/25.
 //
 
-
 // File: Features/Authentication/Views/UsernameSetupView.swift
 
 import SwiftUI
@@ -25,6 +24,7 @@ struct UsernameSetupView: View {
     @State private var showImagePicker = false
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var validationError: String? = nil  // ← NEW
     @State private var usernameAvailable: Bool?
     @State private var checkTask: Task<Void, Never>?
     
@@ -34,11 +34,14 @@ struct UsernameSetupView: View {
         case username, displayName, bio
     }
     
+    // ← UPDATED VALIDATION
     var isFormValid: Bool {
-        !username.isEmpty &&
-        username.count >= 3 &&
-        !displayName.isEmpty &&
-        usernameAvailable == true
+        let sanitizedUsername = username.sanitized
+        let sanitizedDisplayName = displayName.sanitized
+        
+        return sanitizedUsername.isValidUsername &&
+               sanitizedDisplayName.isValidDisplayName &&
+               usernameAvailable == true
     }
     
     var body: some View {
@@ -90,6 +93,7 @@ struct UsernameSetupView: View {
                 .buttonStyle(.plain)
                 
                 VStack(spacing: Spacing.large) {
+                    // ← USERNAME FIELD WITH VALIDATION
                     VStack(alignment: .leading, spacing: Spacing.xSmall) {
                         CollectTextField(
                             title: "Username",
@@ -102,7 +106,14 @@ struct UsernameSetupView: View {
                         )
                         .focused($focusedField, equals: .username)
                         .onChange(of: username) { oldValue, newValue in
+                            // Sanitize: only letters, numbers, underscore
                             username = newValue.lowercased().filter { $0.isLetter || $0.isNumber || $0 == "_" }
+                            
+                            // Clear validation error when typing
+                            if !username.isEmpty {
+                                validationError = nil
+                            }
+                            
                             checkUsernameAvailability()
                         }
                         
@@ -127,15 +138,25 @@ struct UsernameSetupView: View {
                         }
                     }
                     
-                    CollectTextField(
-                        title: "Display Name",
-                        placeholder: "John Doe",
-                        text: $displayName,
-                        icon: "person.fill",
-                        textContentType: .name
-                    )
-                    .focused($focusedField, equals: .displayName)
+                    // ← DISPLAY NAME FIELD
+                    VStack(alignment: .leading, spacing: Spacing.xSmall) {
+                        CollectTextField(
+                            title: "Display Name",
+                            placeholder: "John Doe",
+                            text: $displayName,
+                            icon: "person.fill",
+                            textContentType: .name
+                        )
+                        .focused($focusedField, equals: .displayName)
+                        .onChange(of: displayName) { oldValue, newValue in
+                            // Clear validation error when typing
+                            if !displayName.isEmpty {
+                                validationError = nil
+                            }
+                        }
+                    }
                     
+                    // ← BIO FIELD WITH VALIDATION
                     VStack(alignment: .leading, spacing: Spacing.xSmall) {
                         Text("Bio (Optional)")
                             .font(.labelMedium)
@@ -152,6 +173,12 @@ struct UsernameSetupView: View {
                                         .strokeBorder(Color.separator, lineWidth: 1)
                                 }
                                 .focused($focusedField, equals: .bio)
+                                .onChange(of: bio) { oldValue, newValue in
+                                    // Limit bio to 200 characters
+                                    if bio.count > 200 {
+                                        bio = String(bio.prefix(200))
+                                    }
+                                }
                             
                             if bio.isEmpty {
                                 Text("Tell us about your collecting journey...")
@@ -162,9 +189,27 @@ struct UsernameSetupView: View {
                                     .allowsHitTesting(false)
                             }
                         }
+                        
+                        // Character counter for bio
+                        if !bio.isEmpty {
+                            Text("\(bio.count)/200")
+                                .font(.caption)
+                                .foregroundStyle(bio.count > 200 ? .error : .textTertiary)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                        }
                     }
                 }
                 
+                // ← VALIDATION ERROR DISPLAY
+                if let error = validationError {
+                    Text(error)
+                        .font(.bodySmall)
+                        .foregroundStyle(.error)
+                        .multilineTextAlignment(.center)
+                        .transition(.opacity)
+                }
+                
+                // Error message display
                 if let errorMessage {
                     Text(errorMessage)
                         .font(.bodySmall)
@@ -175,7 +220,7 @@ struct UsernameSetupView: View {
                 Spacer(minLength: Spacing.xLarge)
                 
                 CTAButton("Continue") {
-                    completeSetup()
+                    validateAndComplete()  // ← CHANGED
                 }
                 .disabled(!isFormValid || isLoading)
             }
@@ -207,7 +252,14 @@ struct UsernameSetupView: View {
         checkTask?.cancel()
         usernameAvailable = nil
         
+        // Must be at least 3 characters
         guard username.count >= 3 else { return }
+        
+        // Must be valid format
+        guard username.isValidUsername else {
+            usernameAvailable = false
+            return
+        }
         
         checkTask = Task {
             try? await Task.sleep(for: .milliseconds(500))
@@ -231,28 +283,78 @@ struct UsernameSetupView: View {
         }
     }
     
-    private func completeSetup() {
+    // ← NEW VALIDATION FUNCTION
+    private func validateAndComplete() {
+        // Clear previous errors
+        validationError = nil
+        errorMessage = nil
+        
+        // Sanitize inputs
+        let sanitizedUsername = username.sanitized.lowercased()
+        let sanitizedDisplayName = displayName.sanitized
+        let sanitizedBio = bio.sanitized
+        
+        // Validate username
+        guard sanitizedUsername.isValidUsername else {
+            validationError = InputValidator.errorMessage(for: .username)
+            HapticManager.shared.error()
+            return
+        }
+        
+        // Validate display name
+        guard sanitizedDisplayName.isValidDisplayName else {
+            validationError = InputValidator.errorMessage(for: .displayName)
+            HapticManager.shared.error()
+            return
+        }
+        
+        // Validate bio if provided
+        if !sanitizedBio.isEmpty {
+            guard InputValidator.isValidBio(sanitizedBio) else {
+                validationError = InputValidator.errorMessage(for: .bio)
+                HapticManager.shared.error()
+                return
+            }
+        }
+        
+        // Check username availability
+        guard usernameAvailable == true else {
+            validationError = "Username is not available"
+            HapticManager.shared.error()
+            return
+        }
+        
+        // Proceed with setup
+        completeSetup(
+            username: sanitizedUsername,
+            displayName: sanitizedDisplayName,
+            bio: sanitizedBio.isEmpty ? nil : sanitizedBio
+        )
+    }
+    
+    // ← UPDATED COMPLETE SETUP
+    private func completeSetup(username: String, displayName: String, bio: String?) {
         isLoading = true
         errorMessage = nil
         
         Task {
             do {
-                var avatarData: Data?
-                if let image = selectedImage {
-                    avatarData = image.jpegData(compressionQuality: 0.7)
-                }
-                
                 try await authService.completeOnboarding(
                     userID: userID,
                     username: username,
                     displayName: displayName,
-                    bio: bio.isEmpty ? nil : bio,
-                    avatar: avatarData
+                    bio: bio,
+                    avatar: selectedImage
                 )
+                
+                await MainActor.run {
+                    HapticManager.shared.success()
+                }
             } catch {
                 await MainActor.run {
                     isLoading = false
                     errorMessage = error.localizedDescription
+                    HapticManager.shared.error()
                 }
             }
         }

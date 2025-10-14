@@ -1,11 +1,3 @@
-//
-//  FirebaseService.swift
-//  stashd
-//
-//  Created by Sean Lynch on 10/9/25.
-//
-
-
 // File: Core/Services/FirebaseService.swift
 
 import Foundation
@@ -23,16 +15,34 @@ final class FirebaseService {
     let storage: Storage
     
     private init() {
-        if FirebaseApp.app() == nil {
-            FirebaseApp.configure()
-        }
+        // Firebase is already configured in StashdApp
+        // Just get references to the services
         
         self.auth = Auth.auth()
         self.firestore = Firestore.firestore()
         self.storage = Storage.storage()
         
+        // Configure Firestore settings
         let settings = FirestoreSettings()
-        settings.cacheSettings = PersistentCacheSettings(sizeBytes: FirestoreCacheSizeUnlimited as NSNumber)
+        settings.isPersistenceEnabled = true
+        settings.cacheSizeBytes = FirestoreCacheSizeUnlimited
         firestore.settings = settings
+        
+        // DEBUG LOGS
+        print("🔥 FirebaseService initialized")
+        print("✅ Auth configured")
+        print("✅ Firestore configured")
+        print("✅ Storage configured")
+        print("🪣 Storage bucket: \(storage.reference().bucket)")
+    }
+    
+    // Helper to get current user ID
+    var currentUserID: String? {
+        auth.currentUser?.uid
+    }
+    
+    // Helper to check if user is signed in
+    var isSignedIn: Bool {
+        auth.currentUser != nil
     }
 }

@@ -35,19 +35,11 @@ final class CollectionViewModel {
             // Simulate upload delay
             try await Task.sleep(for: .milliseconds(500))
             
-            // Save cover image to documents directory
+            // Upload cover image to Firebase Storage (if provided)
             var coverURL: URL?
-            if let image = coverImage,
-               let imageData = image.jpegData(compressionQuality: 0.7) {
-                let filename = "\(UUID().uuidString)_cover.jpg"
-                if let documentsDirectory = FileManager.default.urls(
-                    for: .documentDirectory,
-                    in: .userDomainMask
-                ).first {
-                    let fileURL = documentsDirectory.appendingPathComponent(filename)
-                    try? imageData.write(to: fileURL)
-                    coverURL = fileURL
-                }
+            if let image = coverImage {
+                let collectionID = UUID()
+                coverURL = try await StorageService.shared.uploadCollectionCover(image, collectionID: collectionID.uuidString)
             }
             
             // Create the collection
@@ -60,11 +52,18 @@ final class CollectionViewModel {
             collection.coverImageURL = coverURL
             collection.isPublic = true
             
+            // Save locally
             modelContext.insert(collection)
             try modelContext.save()
             
+            // Sync to Firestore
+            try await FirestoreService.shared.saveCollection(collection)
+            
+            HapticManager.shared.success()  // ← ADD SUCCESS HAPTIC
+            
             isLoading = false
         } catch {
+            HapticManager.shared.error()  // ← ADD ERROR HAPTIC
             isLoading = false
             errorMessage = error.localizedDescription
             throw error
@@ -74,20 +73,26 @@ final class CollectionViewModel {
     func deleteCollection(_ collection: CollectionModel) {
         guard let modelContext else { return }
         
-        // Delete cover image file if it exists
+        // Delete cover image from Firebase Storage if it exists
         if let coverURL = collection.coverImageURL {
-            try? FileManager.default.removeItem(at: coverURL)
+            Task {
+                try? await StorageService.shared.deleteImage(at: coverURL)
+            }
         }
         
-        // Delete item images
+        // Delete item images from Firebase Storage
         for item in collection.items {
             for imageURL in item.imageURLs {
-                try? FileManager.default.removeItem(at: imageURL)
+                Task {
+                    try? await StorageService.shared.deleteImage(at: imageURL)
+                }
             }
         }
         
         modelContext.delete(collection)
         try? modelContext.save()
+        
+        HapticManager.shared.success()  // ← ADD SUCCESS HAPTIC
     }
     
     func updateCollection(
@@ -109,23 +114,17 @@ final class CollectionViewModel {
             
             // Update cover image if new one provided
             if let image = coverImage {
-                // Delete old cover image
+                // Delete old cover image from Firebase Storage
                 if let oldCoverURL = collection.coverImageURL {
-                    try? FileManager.default.removeItem(at: oldCoverURL)
+                    try? await StorageService.shared.deleteImage(at: oldCoverURL)
                 }
                 
-                // Save new cover image
-                if let imageData = image.jpegData(compressionQuality: 0.7) {
-                    let filename = "\(UUID().uuidString)_cover.jpg"
-                    if let documentsDirectory = FileManager.default.urls(
-                        for: .documentDirectory,
-                        in: .userDomainMask
-                    ).first {
-                        let fileURL = documentsDirectory.appendingPathComponent(filename)
-                        try? imageData.write(to: fileURL)
-                        collection.coverImageURL = fileURL
-                    }
-                }
+                // Upload new cover image to Firebase Storage
+                let newCoverURL = try await StorageService.shared.uploadCollectionCover(
+                    image,
+                    collectionID: collection.id.uuidString
+                )
+                collection.coverImageURL = newCoverURL
             }
             
             collection.title = title
@@ -135,8 +134,14 @@ final class CollectionViewModel {
             
             try modelContext.save()
             
+            // Sync to Firestore
+            try await FirestoreService.shared.saveCollection(collection)
+            
+            HapticManager.shared.success()  // ← ADD SUCCESS HAPTIC
+            
             isLoading = false
         } catch {
+            HapticManager.shared.error()  // ← ADD ERROR HAPTIC
             isLoading = false
             errorMessage = error.localizedDescription
             throw error

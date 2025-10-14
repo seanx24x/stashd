@@ -36,7 +36,7 @@ struct MainTabView: View {
                 }
                 .tag(AppTab.notifications)
             
-            ProfileView(user: currentUser)
+            ProfileView()
                 .tabItem {
                     Label("Profile", systemImage: "person.fill")
                 }
@@ -45,6 +45,7 @@ struct MainTabView: View {
         .tint(.stashdPrimary)
         .onChange(of: selectedTab) { oldValue, newValue in
             if newValue == .create {
+                HapticManager.shared.medium()  // ← ADD HAPTIC FEEDBACK
                 coordinator.presentedSheet = .createCollection
                 selectedTab = oldValue
             }
@@ -52,8 +53,10 @@ struct MainTabView: View {
         .sheet(item: $coordinator.presentedSheet) { destination in
             switch destination {
             case .createCollection:
-                CreateCollectionView()  // ← Use the real view now
+                CreateCollectionView()
+                    .presentationDetents([.large])  // ← ADD THIS
                     .presentationDragIndicator(.visible)
+                    .interactiveDismissDisabled(false)  // ← ADD THIS
                 
             case .addItem(let collectionID):
                 Text("Add Item Sheet")

@@ -27,24 +27,42 @@ final class CollectionDetailViewModel {
         self.currentUser = currentUser
     }
     
+    // File: Features/Collections/ViewModels/CollectionDetailViewModel.swift
+
     func toggleLike(for collection: CollectionModel) {
         guard let modelContext, let currentUser else { return }
         
-        if let existingLike = collection.likes.first(where: { $0.user?.id == currentUser.id }) {
+        if let existingLike = collection.likes.first(where: { $0.user.id == currentUser.id }) {
             modelContext.delete(existingLike)
         } else {
             let newLike = Like(user: currentUser, collection: collection)
             modelContext.insert(newLike)
+            
+            // Create activity for collection owner (if not liking own collection)
+            if collection.owner?.id != currentUser.id, let owner = collection.owner {
+                let activity = ActivityItem(
+                    type: .like,
+                    actor: currentUser,
+                    recipient: owner,
+                    collection: collection
+                )
+                modelContext.insert(activity)
+                
+                // Sync activity to Firestore
+                Task {
+                    try? await FirestoreService.shared.saveActivity(activity)
+                }
+            }
         }
         
         try? modelContext.save()
+        
+        // Sync collection to Firestore (updates like count)
+        Task {
+            try? await FirestoreService.shared.saveCollection(collection)
+        }
     }
-    
-    func isLiked(_ collection: CollectionModel) -> Bool {
-        guard let currentUser else { return false }
-        return collection.likes.contains { $0.user?.id == currentUser.id }
-    }
-    
+
     func postComment(for collection: CollectionModel) async {
         guard let modelContext, let currentUser else { return }
         guard !commentText.trimmingCharacters(in: .whitespaces).isEmpty else { return }
@@ -56,13 +74,32 @@ final class CollectionDetailViewModel {
             try await Task.sleep(for: .milliseconds(300))
             
             let comment = Comment(
-                text: commentText.trimmingCharacters(in: .whitespaces),
+                content: commentText.trimmingCharacters(in: .whitespaces),
                 author: currentUser,
                 collection: collection
             )
             
             modelContext.insert(comment)
+            
+            // Create activity for collection owner (if not commenting on own collection)
+            if collection.owner?.id != currentUser.id, let owner = collection.owner {
+                let activity = ActivityItem(
+                    type: .comment,
+                    actor: currentUser,
+                    recipient: owner,
+                    collection: collection,
+                    comment: comment
+                )
+                modelContext.insert(activity)
+                
+                // Sync activity to Firestore
+                try await FirestoreService.shared.saveActivity(activity)
+            }
+            
             try modelContext.save()
+            
+            // Sync collection to Firestore (updates comment count)
+            try await FirestoreService.shared.saveCollection(collection)
             
             commentText = ""
             isSubmittingComment = false
@@ -74,7 +111,7 @@ final class CollectionDetailViewModel {
     
     func deleteComment(_ comment: Comment) {
         guard let modelContext, let currentUser else { return }
-        guard comment.author?.id == currentUser.id else { return }
+        guard comment.author.id == currentUser.id else { return }
         
         modelContext.delete(comment)
         try? modelContext.save()

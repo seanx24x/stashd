@@ -105,9 +105,7 @@ struct CommentSectionView: View {
                                 viewModel.deleteComment(comment)
                             },
                             onProfileTap: {
-                                if let authorID = comment.author?.id {
-                                    onProfileTap(authorID)
-                                }
+                                onProfileTap(comment.author.id)
                             }
                         )
                         .padding(.horizontal, Spacing.large)

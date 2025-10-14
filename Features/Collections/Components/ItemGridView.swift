@@ -5,7 +5,6 @@
 //  Created by Sean Lynch on 10/10/25.
 //
 
-
 // File: Features/Collections/Components/ItemGridView.swift
 
 import SwiftUI
@@ -28,6 +27,9 @@ struct ItemGridView: View {
             }
         }
         .padding(.horizontal, Spacing.large)
+        .navigationDestination(for: CollectionItem.self) { item in  // ← ADD THIS
+            ItemDetailView(item: item)
+        }
     }
 }
 
@@ -101,7 +103,9 @@ struct ItemThumbnailView: View {
             )
         )
     )
-    item.condition = .excellent
+    item.condition = ItemCondition.good
     
-    return ItemGridView(items: [item, item, item])
+    return NavigationStack {
+        ItemGridView(items: [item, item, item])
+    }
 }

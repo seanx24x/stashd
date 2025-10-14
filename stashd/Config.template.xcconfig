@@ -1,0 +1,5 @@
+// Config.template.xcconfig
+// Template for configuration - copy to Config.xcconfig and fill in your keys
+// This file IS committed to git
+
+OPENAI_API_KEY = your-openai-key-here

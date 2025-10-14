@@ -1,11 +1,3 @@
-//
-//  CollectionDetailView.swift
-//  stashd
-//
-//  Created by Sean Lynch on 10/10/25.
-//
-
-
 // File: Features/Collections/Views/CollectionDetailView.swift
 
 import SwiftUI
@@ -16,23 +8,46 @@ struct CollectionDetailView: View {
     
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
-    @Environment(AuthenticationService.self) private var authService
+    @Environment(AppCoordinator.self) private var coordinator
     
-    @State private var viewModel = CollectionViewModel()
     @State private var showAddItem = false
+    @State private var showAIScan = false
     @State private var showEditCollection = false
     @State private var showDeleteAlert = false
+    @State private var showGenerateDescription = false
+    @State private var isGeneratingDescription = false
+    @State private var selectedTag: String? = nil
+    @State private var showTagFilter = false
+    @State private var collectionInsights: CollectionInsights?
+    @State private var isGeneratingInsights = false
+    @State private var completionSuggestions: [CompletionSuggestion]? = nil  // ← NEW
+    @State private var isGeneratingCompletions = false                        // ← NEW
     
-    var isOwner: Bool {
-        collection.owner?.id == authService.currentUser?.id
+    // Computed property for all tags
+    private var allTags: [String] {
+        let tagSet = Set(collection.items.flatMap { $0.tags })
+        return Array(tagSet).sorted()
+    }
+    
+    // Computed property for filtered items
+    private var filteredItems: [CollectionItem] {
+        if let selectedTag {
+            return collection.items.filter { $0.tags.contains(selectedTag) }
+        }
+        return collection.items
+    }
+    
+    // Computed property for total collection value
+    private var totalValue: Decimal {
+        collection.items.reduce(0) { $0 + $1.estimatedValue }
     }
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 0) {
-                // Hero Cover Image
+            VStack(spacing: Spacing.large) {
+                // Cover Image
                 if let coverURL = collection.coverImageURL {
-                    AsyncImage(url: coverURL) { image in
+                    CachedAsyncImage(url: coverURL) { image in
                         image
                             .resizable()
                             .scaledToFill()
@@ -44,29 +59,10 @@ struct CollectionDetailView: View {
                             }
                     }
                     .frame(height: 300)
-                    .frame(maxWidth: .infinity)
-                    .clipped()
-                } else {
-                    Rectangle()
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color.stashdPrimary.opacity(0.3),
-                                    Color.stashdAccent.opacity(0.2)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(height: 300)
-                        .overlay {
-                            Image(systemName: collection.category.iconName)
-                                .font(.system(size: 80))
-                                .foregroundStyle(.white.opacity(0.5))
-                        }
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large))
                 }
                 
-                VStack(alignment: .leading, spacing: Spacing.large) {
+                VStack(alignment: .leading, spacing: Spacing.medium) {
                     // Collection Info
                     VStack(alignment: .leading, spacing: Spacing.small) {
                         HStack {
@@ -75,130 +71,315 @@ struct CollectionDetailView: View {
                                     .font(.displayMedium)
                                     .foregroundStyle(.textPrimary)
                                 
-                                HStack(spacing: Spacing.small) {
-                                    Image(systemName: collection.category.iconName)
-                                        .font(.labelMedium)
-                                    Text(collection.category.rawValue)
-                                        .font(.labelLarge)
-                                }
-                                .foregroundStyle(.textSecondary)
+                                Label(collection.category.rawValue, systemImage: collection.category.iconName)
+                                    .font(.labelLarge)
+                                    .foregroundStyle(.textSecondary)
                             }
                             
                             Spacer()
                             
-                            if isOwner {
-                                Menu {
-                                    Button {
-                                        showEditCollection = true
-                                    } label: {
-                                        Label("Edit Collection", systemImage: "pencil")
-                                    }
-                                    
-                                    Button {
-                                        // Share action
-                                    } label: {
-                                        Label("Share", systemImage: "square.and.arrow.up")
-                                    }
-                                    
-                                    Divider()
-                                    
-                                    Button(role: .destructive) {
-                                        showDeleteAlert = true
-                                    } label: {
-                                        Label("Delete Collection", systemImage: "trash")
-                                    }
-                                } label: {
-                                    Image(systemName: "ellipsis.circle")
-                                        .font(.title2)
-                                        .foregroundStyle(.textPrimary)
-                                }
+                            // Stats
+                            VStack(alignment: .trailing, spacing: Spacing.xSmall) {
+                                Text("\(collection.items.count)")
+                                    .font(.headlineLarge)
+                                    .foregroundStyle(Color.stashdPrimary)
+                                
+                                Text("Items")
+                                    .font(.labelSmall)
+                                    .foregroundStyle(.textSecondary)
                             }
                         }
                         
-                        if let description = collection.collectionDescription, !description.isEmpty {
+                        // Description
+                        if let description = collection.collectionDescription {
                             Text(description)
-                                .font(.bodyLarge)
+                                .font(.bodyMedium)
                                 .foregroundStyle(.textSecondary)
+                                .padding(.top, Spacing.xSmall)
+                        } else {
+                            // Generate Description Button
+                            Button {
+                                HapticManager.shared.light()
+                                showGenerateDescription = true
+                            } label: {
+                                HStack {
+                                    Image(systemName: "sparkles")
+                                    Text("Generate Description with AI")
+                                        .font(.labelLarge.weight(.medium))
+                                }
+                                .foregroundStyle(Color.stashdPrimary)
+                                .padding(.top, Spacing.xSmall)
+                            }
+                            .disabled(isGeneratingDescription || collection.items.isEmpty)
                         }
                         
-                        // Stats
-                        HStack(spacing: Spacing.large) {
-                            StatLabel(
-                                icon: "square.stack.3d.up.fill",
-                                value: collection.items.count,
-                                label: "Items"
-                            )
-                            
-                            StatLabel(
-                                icon: "heart.fill",
-                                value: collection.likes.count,
-                                label: "Likes"
-                            )
-                            
-                            StatLabel(
-                                icon: "eye.fill",
-                                value: collection.viewCount,
-                                label: "Views"
-                            )
+                        // AI Insights Section
+                        if let insights = collectionInsights {
+                            InsightsCard(insights: insights)
+                                .transition(.scale.combined(with: .opacity))
+                        } else if !collection.items.isEmpty {
+                            Button {
+                                HapticManager.shared.light()
+                                generateInsights()
+                            } label: {
+                                HStack {
+                                    Image(systemName: "lightbulb.fill")
+                                    Text(isGeneratingInsights ? "Generating Insights..." : "Generate AI Insights")
+                                        .font(.labelLarge.weight(.medium))
+                                    
+                                    if isGeneratingInsights {
+                                        ProgressView()
+                                            .scaleEffect(0.7)
+                                            .padding(.leading, Spacing.xSmall)
+                                    }
+                                }
+                                .foregroundStyle(Color.stashdPrimary)
+                                .padding(.top, Spacing.xSmall)
+                            }
+                            .disabled(isGeneratingInsights)
                         }
-                        .padding(.top, Spacing.small)
+                        
+                        // ← NEW: Completion Suggestions Section
+                        if let suggestions = completionSuggestions, !suggestions.isEmpty {
+                            CompletionSuggestionsCard(suggestions: suggestions)
+                                .transition(.scale.combined(with: .opacity))
+                        } else if !collection.items.isEmpty && collectionInsights != nil {
+                            Button {
+                                HapticManager.shared.light()
+                                generateCompletions()
+                            } label: {
+                                HStack {
+                                    Image(systemName: "sparkles")
+                                    Text(isGeneratingCompletions ? "Generating Suggestions..." : "Get Completion Suggestions")
+                                        .font(.labelLarge.weight(.medium))
+                                    
+                                    if isGeneratingCompletions {
+                                        ProgressView()
+                                            .scaleEffect(0.7)
+                                            .padding(.leading, Spacing.xSmall)
+                                    }
+                                }
+                                .foregroundStyle(Color.stashdPrimary)
+                                .padding(.top, Spacing.xSmall)
+                            }
+                            .disabled(isGeneratingCompletions)
+                        }
+                        
+                        // Total Value
+                        if totalValue > 0 {
+                            HStack {
+                                Text("Total Value:")
+                                    .font(.bodyMedium)
+                                    .foregroundStyle(.textSecondary)
+                                
+                                Text(formatCurrency(totalValue))
+                                    .font(.bodyMedium.weight(.semibold))
+                                    .foregroundStyle(Color.stashdPrimary)
+                            }
+                            .padding(.top, Spacing.xSmall)
+                        }
                     }
-                    .padding(.horizontal, Spacing.large)
-                    .padding(.top, Spacing.large)
                     
                     Divider()
-                        .padding(.horizontal, Spacing.large)
                     
-                    // Items Section
-                    VStack(alignment: .leading, spacing: Spacing.medium) {
-                        HStack {
-                            Text("Items")
-                                .font(.headlineSmall)
-                                .foregroundStyle(.textPrimary)
-                            
-                            Spacer()
-                            
-                            if isOwner {
-                                Button {
-                                    showAddItem = true
-                                } label: {
-                                    HStack(spacing: Spacing.xSmall) {
-                                        Image(systemName: "plus.circle.fill")
-                                        Text("Add Item")
-                                    }
-                                    .font(.labelLarge.weight(.semibold))
+                    // Tag Filter Section
+                    if !allTags.isEmpty {
+                        VStack(alignment: .leading, spacing: Spacing.small) {
+                            HStack {
+                                Image(systemName: "line.3.horizontal.decrease.circle")
+                                    .font(.caption)
                                     .foregroundStyle(Color.stashdPrimary)
+                                
+                                Text("Filter by Tag")
+                                    .font(.labelLarge.weight(.semibold))
+                                    .foregroundStyle(.textPrimary)
+                                
+                                Spacer()
+                                
+                                if selectedTag != nil {
+                                    Button {
+                                        HapticManager.shared.light()
+                                        withAnimation(.spring(response: 0.3)) {
+                                            selectedTag = nil
+                                        }
+                                    } label: {
+                                        Text("Clear")
+                                            .font(.labelMedium)
+                                            .foregroundStyle(Color.stashdPrimary)
+                                    }
+                                }
+                            }
+                            
+                            FlowLayout(spacing: Spacing.xSmall) {
+                                ForEach(allTags, id: \.self) { tag in
+                                    FilterTagChip(
+                                        text: tag,
+                                        isSelected: selectedTag == tag
+                                    )
+                                    .onTapGesture {
+                                        HapticManager.shared.light()
+                                        withAnimation(.spring(response: 0.3)) {
+                                            if selectedTag == tag {
+                                                selectedTag = nil
+                                            } else {
+                                                selectedTag = tag
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
-                        .padding(.horizontal, Spacing.large)
+                        .padding(.vertical, Spacing.small)
                         
-                        if collection.items.isEmpty {
-                            EmptyItemsView(isOwner: isOwner) {
-                                showAddItem = true
+                        Divider()
+                    }
+                    
+                    // Items Header with count
+                    HStack {
+                        Text(selectedTag != nil ? "Filtered Items (\(filteredItems.count))" : "Items (\(collection.items.count))")
+                            .font(.headlineSmall)
+                            .foregroundStyle(.textPrimary)
+                        
+                        Spacer()
+                        
+                        Menu {
+                            Button {
+                                HapticManager.shared.light()
+                                showAIScan = true
+                            } label: {
+                                Label("AI Scan", systemImage: "wand.and.stars")
                             }
+                            
+                            Button {
+                                HapticManager.shared.light()
+                                showAddItem = true
+                            } label: {
+                                Label("Add Manually", systemImage: "plus.circle")
+                            }
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(Color.stashdPrimary)
+                        }
+                    }
+                    
+                    // Items Grid - USE FILTERED ITEMS
+                    if filteredItems.isEmpty {
+                        if selectedTag != nil {
+                            // No items with this tag
+                            VStack(spacing: Spacing.medium) {
+                                Image(systemName: "tag.slash")
+                                    .font(.system(size: 48))
+                                    .foregroundStyle(.textTertiary)
+                                
+                                Text("No items with tag '\(selectedTag!)'")
+                                    .font(.bodyLarge)
+                                    .foregroundStyle(.textSecondary)
+                                
+                                Button {
+                                    HapticManager.shared.light()
+                                    withAnimation(.spring(response: 0.3)) {
+                                        selectedTag = nil
+                                    }
+                                } label: {
+                                    Text("Clear Filter")
+                                        .font(.labelLarge.weight(.medium))
+                                        .foregroundStyle(Color.stashdPrimary)
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Spacing.xxLarge)
                         } else {
-                            ItemGridView(items: collection.items)
+                            EmptyItemsView()
+                        }
+                    } else {
+                        LazyVGrid(
+                            columns: [
+                                GridItem(.flexible(), spacing: Spacing.medium),
+                                GridItem(.flexible(), spacing: Spacing.medium)
+                            ],
+                            spacing: Spacing.medium
+                        ) {
+                            ForEach(filteredItems) { item in
+                                Button {
+                                    HapticManager.shared.light()
+                                    coordinator.navigate(to: .itemDetail(item.id))
+                                } label: {
+                                    ItemGridCard(item: item)
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
                     }
                 }
-                .padding(.bottom, Spacing.xxLarge)
+                .padding(.horizontal, Spacing.large)
             }
+            .padding(.bottom, Spacing.xxLarge)
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text(collection.title)
-                    .font(.headline)
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        HapticManager.shared.light()
+                        showEditCollection = true
+                    } label: {
+                        Label("Edit Collection", systemImage: "pencil")
+                    }
+                    
+                    Divider()
+                    
+                    Button(role: .destructive) {
+                        HapticManager.shared.warning()
+                        showDeleteAlert = true
+                    } label: {
+                        Label("Delete Collection", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundStyle(.textPrimary)
+                }
             }
         }
         .sheet(isPresented: $showAddItem) {
             AddItemView(collection: collection)
-                .environment(authService)
+        }
+        .sheet(isPresented: $showAIScan) {
+            AIItemScanView(collection: collection) { newItem in
+                // Item added successfully
+            }
         }
         .sheet(isPresented: $showEditCollection) {
-            EditCollectionView(collection: collection)
-                .environment(authService)
+            Text("Edit Collection Coming Soon")
+        }
+        .sheet(isPresented: $showGenerateDescription) {
+            NavigationStack {
+                VStack(spacing: Spacing.large) {
+                    if isGeneratingDescription {
+                        VStack(spacing: Spacing.medium) {
+                            ProgressView()
+                                .scaleEffect(1.5)
+                            Text("Generating description...")
+                                .font(.bodyLarge)
+                                .foregroundStyle(.textSecondary)
+                        }
+                        .padding()
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .navigationTitle("Generate Description")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            showGenerateDescription = false
+                        }
+                    }
+                }
+                .task {
+                    await generateDescription()
+                }
+            }
         }
         .alert("Delete Collection?", isPresented: $showDeleteAlert) {
             Button("Cancel", role: .cancel) {}
@@ -208,108 +389,510 @@ struct CollectionDetailView: View {
         } message: {
             Text("This will permanently delete '\(collection.title)' and all its items. This action cannot be undone.")
         }
-        .task {
-            viewModel.configure(modelContext: modelContext)
-        }
     }
     
     private func deleteCollection() {
-        viewModel.deleteCollection(collection)
+        modelContext.delete(collection)
+        try? modelContext.save()
+        HapticManager.shared.success()
         dismiss()
+    }
+    
+    private func generateDescription() async {
+        isGeneratingDescription = true
+        
+        do {
+            let topItems = collection.items.prefix(5).map { $0.name }
+            
+            let description = try await OpenAIService.shared.generateCollectionDescription(
+                title: collection.title,
+                category: collection.category.rawValue,
+                itemCount: collection.items.count,
+                topItems: topItems,
+                totalValue: totalValue,
+                dateRange: nil
+            )
+            
+            collection.collectionDescription = description
+            try? modelContext.save()
+            
+            HapticManager.shared.success()
+            showGenerateDescription = false
+        } catch {
+            print("Failed to generate description: \(error)")
+        }
+        
+        isGeneratingDescription = false
+    }
+    
+    private func generateInsights() {
+        Task {
+            isGeneratingInsights = true
+            
+            do {
+                let stats = CollectionInsightsService.shared.calculateStats(for: collection)
+                let insights = try await CollectionInsightsService.shared.generateInsights(
+                    for: collection,
+                    stats: stats
+                )
+                
+                withAnimation(.spring(response: 0.3)) {
+                    collectionInsights = insights
+                }
+                
+                HapticManager.shared.success()
+            } catch {
+                print("Failed to generate insights: \(error)")
+                HapticManager.shared.error()
+            }
+            
+            isGeneratingInsights = false
+        }
+    }
+    
+    // ← NEW: Generate Completions Function
+    private func generateCompletions() {
+        Task {
+            isGeneratingCompletions = true
+            
+            do {
+                let suggestions = try await CollectionInsightsService.shared.generateCompletionSuggestions(
+                    for: collection
+                )
+                
+                withAnimation(.spring(response: 0.3)) {
+                    completionSuggestions = suggestions
+                }
+                
+                HapticManager.shared.success()
+            } catch {
+                print("Failed to generate completions: \(error)")
+                HapticManager.shared.error()
+            }
+            
+            isGeneratingCompletions = false
+        }
+    }
+    
+    private func formatCurrency(_ value: Decimal) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.maximumFractionDigits = 2
+        return formatter.string(from: value as NSDecimalNumber) ?? "$\(value)"
     }
 }
 
-struct StatLabel: View {
-    let icon: String
-    let value: Int
-    let label: String
+// MARK: - Insights Card
+
+struct InsightsCard: View {
+    let insights: CollectionInsights
     
     var body: some View {
-        HStack(spacing: Spacing.xSmall) {
-            Image(systemName: icon)
-                .font(.labelMedium)
-                .foregroundStyle(Color.stashdPrimary)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(value)")
+        VStack(alignment: .leading, spacing: Spacing.medium) {
+            HStack {
+                Image(systemName: "lightbulb.fill")
+                    .foregroundStyle(Color.stashdPrimary)
+                
+                Text("AI Insights")
                     .font(.labelLarge.weight(.semibold))
                     .foregroundStyle(.textPrimary)
                 
-                Text(label)
-                    .font(.labelSmall)
-                    .foregroundStyle(.textSecondary)
+                Spacer()
+                
+                Image(systemName: "sparkles")
+                    .font(.caption)
+                    .foregroundStyle(Color.stashdPrimary)
+            }
+            
+            VStack(spacing: Spacing.small) {
+                // Value Analysis
+                InsightRow(
+                    icon: "dollarsign.circle.fill",
+                    title: "Value Analysis",
+                    content: insights.valueAnalysis,
+                    color: .green
+                )
+                
+                Divider()
+                
+                // Rarity Score
+                InsightRow(
+                    icon: "star.fill",
+                    title: "Rarity",
+                    content: insights.rarityScore,
+                    color: .orange
+                )
+                
+                Divider()
+                
+                // Market Trend
+                InsightRow(
+                    icon: "chart.line.uptrend.xyaxis",
+                    title: "Market Trend",
+                    content: insights.marketTrend,
+                    color: .blue
+                )
+                
+                // Completion Suggestions
+                if !insights.completionSuggestions.isEmpty {
+                    Divider()
+                    
+                    VStack(alignment: .leading, spacing: Spacing.xSmall) {
+                        HStack {
+                            Image(systemName: "checklist")
+                                .font(.caption)
+                                .foregroundStyle(Color.purple)
+                            
+                            Text("Suggestions")
+                                .font(.labelMedium.weight(.semibold))
+                                .foregroundStyle(.textPrimary)
+                        }
+                        
+                        ForEach(insights.completionSuggestions, id: \.self) { suggestion in
+                            HStack(alignment: .top, spacing: Spacing.xSmall) {
+                                Image(systemName: "arrow.right.circle.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(.textTertiary)
+                                    .padding(.top, 2)
+                                
+                                Text(suggestion)
+                                    .font(.bodySmall)
+                                    .foregroundStyle(.textSecondary)
+                            }
+                        }
+                    }
+                }
+                
+                // General Insights
+                if !insights.insights.isEmpty {
+                    Divider()
+                    
+                    VStack(alignment: .leading, spacing: Spacing.xSmall) {
+                        HStack {
+                            Image(systemName: "info.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(Color.stashdPrimary)
+                            
+                            Text("Key Insights")
+                                .font(.labelMedium.weight(.semibold))
+                                .foregroundStyle(.textPrimary)
+                        }
+                        
+                        ForEach(insights.insights, id: \.self) { insight in
+                            HStack(alignment: .top, spacing: Spacing.xSmall) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(Color.stashdPrimary)
+                                    .padding(.top, 2)
+                                
+                                Text(insight)
+                                    .font(.bodySmall)
+                                    .foregroundStyle(.textSecondary)
+                            }
+                        }
+                    }
+                }
             }
         }
+        .padding(Spacing.medium)
+        .background(
+            LinearGradient(
+                colors: [
+                    Color.stashdPrimary.opacity(0.05),
+                    Color.stashdPrimary.opacity(0.02)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large))
+        .overlay {
+            RoundedRectangle(cornerRadius: CornerRadius.large)
+                .strokeBorder(
+                    Color.stashdPrimary.opacity(0.2),
+                    lineWidth: 1
+                )
+        }
+        .padding(.top, Spacing.small)
+    }
+}
+
+struct InsightRow: View {
+    let icon: String
+    let title: String
+    let content: String
+    let color: Color
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.xSmall) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.caption)
+                    .foregroundStyle(color)
+                
+                Text(title)
+                    .font(.labelMedium.weight(.semibold))
+                    .foregroundStyle(.textPrimary)
+            }
+            
+            Text(content)
+                .font(.bodySmall)
+                .foregroundStyle(.textSecondary)
+        }
+    }
+}
+
+// MARK: - Completion Suggestions Card
+
+struct CompletionSuggestionsCard: View {
+    let suggestions: [CompletionSuggestion]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.medium) {
+            HStack {
+                Image(systemName: "checklist")
+                    .foregroundStyle(Color.purple)
+                
+                Text("Completion Suggestions")
+                    .font(.labelLarge.weight(.semibold))
+                    .foregroundStyle(.textPrimary)
+                
+                Spacer()
+                
+                Image(systemName: "sparkles")
+                    .font(.caption)
+                    .foregroundStyle(Color.purple)
+            }
+            
+            VStack(spacing: Spacing.small) {
+                ForEach(Array(suggestions.enumerated()), id: \.offset) { index, suggestion in
+                    SuggestionRow(suggestion: suggestion, index: index)
+                    
+                    if index < suggestions.count - 1 {
+                        Divider()
+                    }
+                }
+            }
+        }
+        .padding(Spacing.medium)
+        .background(
+            LinearGradient(
+                colors: [
+                    Color.purple.opacity(0.05),
+                    Color.purple.opacity(0.02)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large))
+        .overlay {
+            RoundedRectangle(cornerRadius: CornerRadius.large)
+                .strokeBorder(
+                    Color.purple.opacity(0.2),
+                    lineWidth: 1
+                )
+        }
+        .padding(.top, Spacing.small)
+    }
+}
+
+struct SuggestionRow: View {
+    let suggestion: CompletionSuggestion
+    let index: Int
+    
+    private var priorityColor: Color {
+        switch suggestion.priority.lowercased() {
+        case "high":
+            return .red
+        case "medium":
+            return .orange
+        case "low":
+            return .green
+        default:
+            return .gray
+        }
+    }
+    
+    private var priorityIcon: String {
+        switch suggestion.priority.lowercased() {
+        case "high":
+            return "exclamationmark.3"
+        case "medium":
+            return "exclamationmark.2"
+        case "low":
+            return "exclamationmark"
+        default:
+            return "circle"
+        }
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.xSmall) {
+            HStack(alignment: .top, spacing: Spacing.small) {
+                // Number badge
+                Text("\(index + 1)")
+                    .font(.labelSmall.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 24, height: 24)
+                    .background(Color.purple)
+                    .clipShape(Circle())
+                
+                VStack(alignment: .leading, spacing: Spacing.xSmall) {
+                    // Item name with priority badge
+                    HStack {
+                        Text(suggestion.itemName)
+                            .font(.bodyMedium.weight(.semibold))
+                            .foregroundStyle(.textPrimary)
+                        
+                        Spacer()
+                        
+                        // Priority badge
+                        HStack(spacing: 4) {
+                            Image(systemName: priorityIcon)
+                                .font(.caption2)
+                            Text(suggestion.priority.capitalized)
+                                .font(.labelSmall.weight(.medium))
+                        }
+                        .foregroundStyle(priorityColor)
+                        .padding(.horizontal, Spacing.xSmall)
+                        .padding(.vertical, 2)
+                        .background(priorityColor.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                    
+                    // Reason
+                    Text(suggestion.reason)
+                        .font(.bodySmall)
+                        .foregroundStyle(.textSecondary)
+                }
+            }
+        }
+    }
+}
+
+// Filter Tag Chip (different style from regular TagChip)
+struct FilterTagChip: View {
+    let text: String
+    let isSelected: Bool
+    
+    var body: some View {
+        Text(text)
+            .font(.labelSmall.weight(.medium))
+            .foregroundStyle(isSelected ? .white : Color.stashdPrimary)
+            .padding(.horizontal, Spacing.small)
+            .padding(.vertical, 6)
+            .background(isSelected ? Color.stashdPrimary : Color.stashdPrimary.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                if !isSelected {
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Color.stashdPrimary.opacity(0.3), lineWidth: 1)
+                }
+            }
     }
 }
 
 struct EmptyItemsView: View {
-    let isOwner: Bool
-    let action: () -> Void
-    
     var body: some View {
         VStack(spacing: Spacing.large) {
-            Image(systemName: "photo.stack")
-                .font(.system(size: 48))
+            Image(systemName: "square.stack.3d.up.slash")
+                .font(.system(size: 64))
                 .foregroundStyle(.textTertiary)
             
             VStack(spacing: Spacing.small) {
-                Text(isOwner ? "No items yet" : "This collection is empty")
+                Text("No items yet")
                     .font(.headlineSmall)
                     .foregroundStyle(.textPrimary)
                 
-                Text(isOwner ? "Add your first item to start building your collection" : "Check back later for updates")
+                Text("Add your first item to get started")
                     .font(.bodyMedium)
                     .foregroundStyle(.textSecondary)
-                    .multilineTextAlignment(.center)
-            }
-            
-            if isOwner {
-                Button {
-                    action()
-                } label: {
-                    HStack(spacing: Spacing.small) {
-                        Image(systemName: "plus.circle.fill")
-                        Text("Add First Item")
-                    }
-                    .font(.bodyLarge.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, Spacing.large)
-                    .padding(.vertical, Spacing.medium)
-                    .background(Color.stashdPrimary)
-                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
-                }
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, Spacing.xxLarge)
-        .padding(.horizontal, Spacing.large)
+    }
+}
+
+struct ItemGridCard: View {
+    let item: CollectionItem
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.small) {
+            // Image
+            Group {
+                if let firstImageURL = item.imageURLs.first {
+                    CachedAsyncImage(url: firstImageURL) { image in
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    } placeholder: {
+                        Rectangle()
+                            .fill(Color.surfaceElevated)
+                            .overlay {
+                                ProgressView()
+                            }
+                    }
+                } else {
+                    Rectangle()
+                        .fill(Color.surfaceElevated)
+                        .overlay {
+                            Image(systemName: "photo")
+                                .foregroundStyle(.textTertiary)
+                        }
+                }
+            }
+            .frame(height: 150)
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
+            
+            // Info
+            VStack(alignment: .leading, spacing: Spacing.xSmall) {
+                Text(item.name)
+                    .font(.labelLarge.weight(.semibold))
+                    .foregroundStyle(.textPrimary)
+                    .lineLimit(2)
+                
+                if item.estimatedValue > 0 {
+                    Text(formatCurrency(item.estimatedValue))
+                        .font(.labelMedium)
+                        .foregroundStyle(Color.stashdPrimary)
+                }
+            }
+        }
+        .background(.surfaceElevated)
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large))
+    }
+    
+    private func formatCurrency(_ value: Decimal) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.maximumFractionDigits = 2
+        return formatter.string(from: value as NSDecimalNumber) ?? "$\(value)"
     }
 }
 
 #Preview {
-    NavigationStack {
-        let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try! ModelContainer(for: CollectionModel.self, configurations: config)
-        
-        let user = UserProfile(
-            firebaseUID: "preview",
-            username: "johndoe",
-            displayName: "John Doe"
-        )
-        
-        let collection = CollectionModel(
-            title: "My Vinyl Collection",
-            category: .vinyl,
-            owner: user
-        )
-        collection.collectionDescription = "A curated collection of classic records"
-        
-        container.mainContext.insert(user)
-        container.mainContext.insert(collection)
-        
-        return CollectionDetailView(collection: collection)
-            .environment(AuthenticationService())
+    let config = ModelConfiguration(isStoredInMemoryOnly: true)
+    let container = try! ModelContainer(for: CollectionModel.self, configurations: config)
+    
+    let user = UserProfile(
+        firebaseUID: "preview",
+        username: "johndoe",
+        displayName: "John Doe"
+    )
+    
+    let collection = CollectionModel(
+        title: "My Vinyl Collection",
+        category: .vinyl,
+        owner: user
+    )
+    
+    let coordinator = AppCoordinator()
+    
+    return NavigationStack {
+        CollectionDetailView(collection: collection)
+            .environment(coordinator)
             .modelContainer(container)
     }
 }

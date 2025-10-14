@@ -9,6 +9,7 @@
 // File: Features/Authentication/Views/OnboardingView.swift
 
 import SwiftUI
+import AuthenticationServices
 
 struct OnboardingView: View {
     @Environment(AuthenticationService.self) private var authService

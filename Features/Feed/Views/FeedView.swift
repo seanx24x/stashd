@@ -19,8 +19,10 @@ struct FeedView: View {
                     ScrollView {
                         LazyVStack(spacing: Spacing.large) {
                             if viewModel.isLoading && viewModel.feedItems.isEmpty {
-                                ProgressView()
-                                    .padding(.top, Spacing.xxLarge)
+                                // Skeleton Loading
+                                ForEach(0..<3, id: \.self) { _ in
+                                    SkeletonFeedCard()
+                                }
                             } else if viewModel.feedItems.isEmpty {
                                 EmptyFeedView()
                             } else {
@@ -45,6 +47,23 @@ struct FeedView: View {
                                     .onTapGesture {
                                         coordinator.navigate(to: .collectionDetail(collection.id))
                                     }
+                                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                                    .onAppear {
+                                        if collection == viewModel.feedItems.last {
+                                            Task {
+                                                await viewModel.loadMore()
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                if viewModel.isLoading {
+                                    HStack {
+                                        Spacer()
+                                        ProgressView()
+                                            .padding(.vertical, Spacing.medium)
+                                        Spacer()
+                                    }
                                 }
                             }
                         }
@@ -52,6 +71,7 @@ struct FeedView: View {
                         .padding(.vertical, Spacing.medium)
                     }
                     .refreshable {
+                        HapticManager.shared.light()
                         await viewModel.loadFeed()
                     }
                 } else {
@@ -66,6 +86,7 @@ struct FeedView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
+                        HapticManager.shared.selection()
                         // Settings or filter
                     } label: {
                         Image(systemName: "line.3.horizontal.decrease.circle")
@@ -86,19 +107,13 @@ struct FeedView: View {
     private func destinationView(for destination: NavigationDestination) -> some View {
         switch destination {
         case .collectionDetail(let collectionID):
-            // Find the collection from the ID
-            if let collection = viewModel?.feedItems.first(where: { $0.id == collectionID }) {
-                CollectionDetailView(collection: collection)
-            } else {
-                // Fallback if not found in feed
-                CollectionDetailViewLoader(collectionID: collectionID)
-            }
+            CollectionDetailViewLoader(collectionID: collectionID)
             
         case .userProfile(let userID):
-            Text("User Profile: \(userID)")
+            UserProfileView(userID: userID)
             
         case .itemDetail(let itemID):
-            Text("Item Detail")
+            ItemDetailViewLoader(itemID: itemID)
             
         case .editCollection(let collectionID):
             Text("Edit Collection")
@@ -111,34 +126,7 @@ struct FeedView: View {
         }
     }
 }
-
-// Helper view to load collection by ID if not in feed
-struct CollectionDetailViewLoader: View {
-    let collectionID: UUID
-    
-    @Environment(\.modelContext) private var modelContext
-    @State private var collection: CollectionModel?
-    
-    var body: some View {
-        Group {
-            if let collection {
-                CollectionDetailView(collection: collection)
-            } else {
-                ProgressView()
-                    .task {
-                        loadCollection()
-                    }
-            }
-        }
-    }
-    
-    private func loadCollection() {
-        let descriptor = FetchDescriptor<CollectionModel>(
-            predicate: #Predicate { $0.id == collectionID }
-        )
-        collection = try? modelContext.fetch(descriptor).first
-    }
-}
+// MARK: - Empty Feed View
 
 struct EmptyFeedView: View {
     var body: some View {
@@ -148,6 +136,7 @@ struct EmptyFeedView: View {
             Image(systemName: "person.2.slash")
                 .font(.system(size: 64))
                 .foregroundStyle(.textTertiary)
+                .symbolEffect(.pulse)
             
             VStack(spacing: Spacing.small) {
                 Text("Your feed is empty")

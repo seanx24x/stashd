@@ -2,31 +2,28 @@
 //  Like.swift
 //  stashd
 //
-//  Created by Sean Lynch on 10/9/25.
+//  Created by Sean Lynch
 //
 
-
-// File: Core/Models/Like.swift
-
-import SwiftData
 import Foundation
+import SwiftData
 
 @Model
 final class Like {
-    @Attribute(.unique) var id: UUID
-    
-    @Relationship(deleteRule: .nullify)
-    var user: UserProfile?
-    
-    @Relationship(deleteRule: .nullify)
-    var collection: CollectionModel?
-    
+    var id: UUID
     var createdAt: Date
     
-    init(id: UUID = UUID(), user: UserProfile, collection: CollectionModel) {
-        self.id = id
+    // Relationships
+    var user: UserProfile
+    var collection: CollectionModel
+    
+    init(
+        user: UserProfile,
+        collection: CollectionModel
+    ) {
+        self.id = UUID()
         self.user = user
         self.collection = collection
-        self.createdAt = .now
+        self.createdAt = Date()
     }
 }

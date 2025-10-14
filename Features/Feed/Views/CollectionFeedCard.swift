@@ -5,10 +5,10 @@
 //  Created by Sean Lynch on 10/10/25.
 //
 
-
 // File: Features/Feed/Views/CollectionFeedCard.swift
 
 import SwiftUI
+import SwiftData
 
 struct CollectionFeedCard: View {
     let collection: CollectionModel
@@ -28,7 +28,7 @@ struct CollectionFeedCard: View {
                             .frame(width: 40, height: 40)
                             .overlay {
                                 if let avatarURL = owner.avatarURL {
-                                    AsyncImage(url: avatarURL) { image in
+                                    CachedAsyncImage(url: avatarURL) { image in  // ← CHANGED TO CachedAsyncImage
                                         image
                                             .resizable()
                                             .scaledToFill()
@@ -69,7 +69,7 @@ struct CollectionFeedCard: View {
             VStack(alignment: .leading, spacing: Spacing.small) {
                 // Cover image
                 if let coverURL = collection.coverImageURL {
-                    AsyncImage(url: coverURL) { image in
+                    CachedAsyncImage(url: coverURL) { image in  // ← CHANGED TO CachedAsyncImage
                         image
                             .resizable()
                             .scaledToFill()
@@ -119,27 +119,40 @@ struct CollectionFeedCard: View {
             // Action buttons
             HStack(spacing: Spacing.large) {
                 // Like button
-                Button(action: onLikeTapped) {
+                Button {
+                    HapticManager.shared.medium()
+                    onLikeTapped()
+                } label: {
                     HStack(spacing: Spacing.xSmall) {
                         Image(systemName: isLiked ? "heart.fill" : "heart")
                             .foregroundStyle(isLiked ? .error : .textSecondary)
+                            .symbolEffect(.bounce, value: isLiked)
                         
-                        Text("\(collection.likes.count)")
-                            .font(.labelMedium)
-                            .foregroundStyle(.textSecondary)
+                        if collection.likes.count > 0 {
+                            Text("\(collection.likes.count)")
+                                .font(.labelMedium)
+                                .foregroundStyle(.textSecondary)
+                                .contentTransition(.numericText())
+                        }
                     }
                 }
                 .buttonStyle(.plain)
                 
                 // Comment button
-                Button(action: onCommentTapped) {
+                Button {
+                    HapticManager.shared.light()
+                    onCommentTapped()
+                } label: {
                     HStack(spacing: Spacing.xSmall) {
                         Image(systemName: "bubble.left")
                             .foregroundStyle(.textSecondary)
                         
-                        Text("\(collection.comments.count)")
-                            .font(.labelMedium)
-                            .foregroundStyle(.textSecondary)
+                        if collection.comments.count > 0 {
+                            Text("\(collection.comments.count)")
+                                .font(.labelMedium)
+                                .foregroundStyle(.textSecondary)
+                                .contentTransition(.numericText())
+                        }
                     }
                 }
                 .buttonStyle(.plain)
@@ -161,5 +174,6 @@ struct CollectionFeedCard: View {
         .background(.surfaceElevated)
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large))
         .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
+        .id(collection.id)  // ← ADD STABLE ID FOR PERFORMANCE
     }
 }
