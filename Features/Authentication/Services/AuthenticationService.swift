@@ -83,8 +83,23 @@ final class AuthenticationService: NSObject {
         
         authState = .authenticating
         
+        // ✅ NEW: Validate inputs BEFORE any network calls
+        do {
+            try ValidationService.validateUsername(username)
+            try ValidationService.validateDisplayName(displayName)
+            try ValidationService.validateBio(bio)
+        } catch {
+            authState = .onboardingRequired(userID: userID, email: nil)
+            throw error
+        }
+        
+        // ✅ NEW: Sanitize inputs
+        let sanitizedUsername = ValidationService.sanitizeInput(username)
+        let sanitizedDisplayName = ValidationService.sanitizeInput(displayName)
+        let sanitizedBio = bio.map { ValidationService.sanitizeInput($0) }
+        
         // Check username availability in Firestore
-        let isAvailable = try await FirestoreService.shared.checkUsernameAvailable(username)
+        let isAvailable = try await FirestoreService.shared.checkUsernameAvailable(sanitizedUsername)
         guard isAvailable else {
             authState = .onboardingRequired(userID: userID, email: nil)
             throw AuthError.usernameTaken
@@ -96,12 +111,12 @@ final class AuthenticationService: NSObject {
             avatarURL = try await StorageService.shared.uploadAvatar(avatar, userID: userID)
         }
         
-        // Create profile
+        // Create profile with sanitized values
         let profile = UserProfile(
             firebaseUID: userID,
-            username: username,
-            displayName: displayName,
-            bio: bio,
+            username: sanitizedUsername,
+            displayName: sanitizedDisplayName,
+            bio: sanitizedBio,
             avatarURL: avatarURL
         )
         
