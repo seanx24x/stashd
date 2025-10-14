@@ -5,9 +5,6 @@
 //  Created by Sean Lynch on 10/9/25.
 //
 
-
-// File: App/RootView.swift
-
 import SwiftUI
 import SwiftData
 
@@ -20,6 +17,8 @@ struct RootView: View {
             switch authService.authState {
             case .unauthenticated:
                 OnboardingView()
+                    .environment(coordinator)  // ✅ ADD THIS
+                    .environment(authService)   // ✅ ADD THIS
                     .transition(.opacity.combined(with: .scale))
                 
             case .authenticating:
@@ -28,10 +27,14 @@ struct RootView: View {
                 
             case .onboardingRequired(let userID, let email):
                 UsernameSetupView(userID: userID, email: email)
+                    .environment(coordinator)  // ✅ ADD THIS
+                    .environment(authService)   // ✅ ADD THIS
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                 
             case .authenticated(let profile):
                 MainTabView(currentUser: profile)
+                    .environment(coordinator)  // ✅ ADD THIS
+                    .environment(authService)   // ✅ ADD THIS
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
