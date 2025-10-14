@@ -1,4 +1,9 @@
-// File: App/StashdApp.swift
+//
+//  StashdApp.swift
+//  stashd
+//
+//  Created by Sean Lynch
+//
 
 import SwiftUI
 import SwiftData
@@ -6,12 +11,17 @@ import FirebaseCore
 
 @main
 struct StashdApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
+    
     @State private var coordinator = AppCoordinator()
     @State private var authService = AuthenticationService()
     
     let modelContainer: ModelContainer
     
     init() {
+        // ✅ NEW: Validate API keys at launch
+        AppConfig.validateConfiguration()
+        
         // Configure Firebase FIRST - but only here, not in FirebaseService
         if FirebaseApp.app() == nil {
             FirebaseApp.configure()
@@ -46,7 +56,7 @@ struct StashdApp: App {
     
     var body: some Scene {
         WindowGroup {
-            RootView()
+            RootView()  // ← This is correct - you use RootView not ContentView
                 .environment(coordinator)
                 .environment(authService)
                 .modelContainer(modelContainer)
@@ -65,5 +75,34 @@ struct StashdApp: App {
                 }
                 .preferredColorScheme(nil)
         }
+    }
+}
+
+// MARK: - App Delegate
+
+class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil
+    ) -> Bool {
+        // Firebase is configured in StashdApp init
+        print("🔥 Firebase configured")
+        
+        return true
+    }
+    
+    // Handle remote notifications
+    func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        print("📱 Registered for remote notifications")
+    }
+    
+    func application(
+        _ application: UIApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: Error
+    ) {
+        print("❌ Failed to register for remote notifications: \(error)")
     }
 }
