@@ -20,26 +20,29 @@ struct CollectionDetailView: View {
     @State private var showTagFilter = false
     @State private var collectionInsights: CollectionInsights?
     @State private var isGeneratingInsights = false
-    @State private var completionSuggestions: [CompletionSuggestion]? = nil  // ← NEW
-    @State private var isGeneratingCompletions = false                        // ← NEW
+    @State private var completionSuggestions: [CompletionSuggestion]? = nil
+    @State private var isGeneratingCompletions = false
     
-    // Computed property for all tags
+    // ✅ FIXED: Computed property for all tags - safely unwrap items
     private var allTags: [String] {
-        let tagSet = Set(collection.items.flatMap { $0.tags })
+        guard let items = collection.items else { return [] }
+        let tagSet = Set(items.flatMap { $0.tags })
         return Array(tagSet).sorted()
     }
     
-    // Computed property for filtered items
+    // ✅ FIXED: Computed property for filtered items - safely unwrap
     private var filteredItems: [CollectionItem] {
+        guard let items = collection.items else { return [] }
         if let selectedTag {
-            return collection.items.filter { $0.tags.contains(selectedTag) }
+            return items.filter { $0.tags.contains(selectedTag) }
         }
-        return collection.items
+        return items
     }
     
-    // Computed property for total collection value
+    // ✅ FIXED: Computed property for total collection value - safely unwrap
     private var totalValue: Decimal {
-        collection.items.reduce(0) { $0 + $1.estimatedValue }
+        guard let items = collection.items else { return 0 }
+        return items.reduce(0) { $0 + $1.estimatedValue }
     }
     
     var body: some View {
@@ -71,16 +74,17 @@ struct CollectionDetailView: View {
                                     .font(.displayMedium)
                                     .foregroundStyle(.textPrimary)
                                 
-                                Label(collection.category.rawValue, systemImage: collection.category.iconName)
+                                // ✅ FIXED: Use categoryEnum
+                                Label(collection.categoryEnum.rawValue, systemImage: collection.categoryEnum.iconName)
                                     .font(.labelLarge)
                                     .foregroundStyle(.textSecondary)
                             }
                             
                             Spacer()
                             
-                            // Stats
+                            // Stats - ✅ FIXED: Safely unwrap items
                             VStack(alignment: .trailing, spacing: Spacing.xSmall) {
-                                Text("\(collection.items.count)")
+                                Text("\(collection.items?.count ?? 0)")
                                     .font(.headlineLarge)
                                     .foregroundStyle(Color.stashdPrimary)
                                 
@@ -110,14 +114,15 @@ struct CollectionDetailView: View {
                                 .foregroundStyle(Color.stashdPrimary)
                                 .padding(.top, Spacing.xSmall)
                             }
-                            .disabled(isGeneratingDescription || collection.items.isEmpty)
+                            // ✅ FIXED: Check if items exist and not empty
+                            .disabled(isGeneratingDescription || (collection.items?.isEmpty ?? true))
                         }
                         
                         // AI Insights Section
                         if let insights = collectionInsights {
                             InsightsCard(insights: insights)
                                 .transition(.scale.combined(with: .opacity))
-                        } else if !collection.items.isEmpty {
+                        } else if !(collection.items?.isEmpty ?? true) {
                             Button {
                                 HapticManager.shared.light()
                                 generateInsights()
@@ -139,11 +144,11 @@ struct CollectionDetailView: View {
                             .disabled(isGeneratingInsights)
                         }
                         
-                        // ← NEW: Completion Suggestions Section
+                        // Completion Suggestions Section
                         if let suggestions = completionSuggestions, !suggestions.isEmpty {
                             CompletionSuggestionsCard(suggestions: suggestions)
                                 .transition(.scale.combined(with: .opacity))
-                        } else if !collection.items.isEmpty && collectionInsights != nil {
+                        } else if !(collection.items?.isEmpty ?? true) && collectionInsights != nil {
                             Button {
                                 HapticManager.shared.light()
                                 generateCompletions()
@@ -236,7 +241,7 @@ struct CollectionDetailView: View {
                     
                     // Items Header with count
                     HStack {
-                        Text(selectedTag != nil ? "Filtered Items (\(filteredItems.count))" : "Items (\(collection.items.count))")
+                        Text(selectedTag != nil ? "Filtered Items (\(filteredItems.count))" : "Items (\(collection.items?.count ?? 0))")
                             .font(.headlineSmall)
                             .foregroundStyle(.textPrimary)
                         
@@ -398,16 +403,23 @@ struct CollectionDetailView: View {
         dismiss()
     }
     
+    // ✅ FIXED: Generate description with safe array access
     private func generateDescription() async {
         isGeneratingDescription = true
         
         do {
-            let topItems = collection.items.prefix(5).map { $0.name }
+            guard let items = collection.items, !items.isEmpty else {
+                isGeneratingDescription = false
+                showGenerateDescription = false
+                return
+            }
+            
+            let topItems = items.prefix(5).map { $0.name }
             
             let description = try await OpenAIService.shared.generateCollectionDescription(
                 title: collection.title,
-                category: collection.category.rawValue,
-                itemCount: collection.items.count,
+                category: collection.categoryEnum.rawValue,  // ✅ FIXED: Use categoryEnum
+                itemCount: items.count,
                 topItems: topItems,
                 totalValue: totalValue,
                 dateRange: nil
@@ -450,7 +462,6 @@ struct CollectionDetailView: View {
         }
     }
     
-    // ← NEW: Generate Completions Function
     private func generateCompletions() {
         Task {
             isGeneratingCompletions = true

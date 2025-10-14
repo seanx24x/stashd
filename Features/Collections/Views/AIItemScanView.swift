@@ -24,9 +24,9 @@ struct AIItemScanView: View {
     @State private var showImagePicker = false
     @State private var generatedTags: [String] = []
     @State private var isGeneratingTags = false
-    @State private var duplicateCheckResult: DuplicateCheckResult?  // ← NEW
-    @State private var showDuplicateWarning = false                 // ← NEW
-    @State private var isCheckingDuplicates = false                 // ← NEW
+    @State private var duplicateCheckResult: DuplicateCheckResult?
+    @State private var showDuplicateWarning = false
+    @State private var isCheckingDuplicates = false
     
     var body: some View {
         NavigationStack {
@@ -102,8 +102,8 @@ struct AIItemScanView: View {
                             analysis: analysis,
                             tags: generatedTags,
                             isGeneratingTags: isGeneratingTags,
-                            duplicateResult: duplicateCheckResult,  // ← NEW
-                            isCheckingDuplicates: isCheckingDuplicates  // ← NEW
+                            duplicateResult: duplicateCheckResult,
+                            isCheckingDuplicates: isCheckingDuplicates
                         )
                         .transition(.scale.combined(with: .opacity))
                     }
@@ -167,7 +167,7 @@ struct AIItemScanView: View {
                             analysis = nil
                             errorMessage = nil
                             generatedTags = []
-                            duplicateCheckResult = nil  // ← RESET
+                            duplicateCheckResult = nil
                         }
                     }
                 }
@@ -248,7 +248,7 @@ struct AIItemScanView: View {
         }
     }
     
-    // ← NEW: Duplicate Detection
+    // ✅ FIXED: Duplicate Detection
     private func checkForDuplicates(result: OpenAIService.ItemAnalysis) async {
         isCheckingDuplicates = true
         
@@ -259,7 +259,7 @@ struct AIItemScanView: View {
             let duplicateResult = try await CollectionInsightsService.shared.checkForDuplicates(
                 newItemName: result.name,
                 newItemDescription: result.description,
-                existingItems: existingItems  // ← Use unwrapped array
+                existingItems: existingItems
             )
             
             await MainActor.run {
@@ -282,6 +282,7 @@ struct AIItemScanView: View {
         }
     }
     
+    // ✅ FIXED: Create Item
     private func createItem() {
         guard let image = selectedImage,
               let analysis else { return }
@@ -322,8 +323,9 @@ struct AIItemScanView: View {
         // Set generated tags
         item.tags = generatedTags
         
-        // Add to collection
-        collection.items.append(item)
+        // ✅ FIX: Insert into modelContext instead of appending
+        // SwiftData automatically establishes the relationship
+        modelContext.insert(item)
         
         // Upload image to Firebase Storage
         Task {
@@ -355,8 +357,8 @@ struct AIAnalysisCard: View {
     let analysis: OpenAIService.ItemAnalysis
     let tags: [String]
     let isGeneratingTags: Bool
-    let duplicateResult: DuplicateCheckResult?  // ← NEW
-    let isCheckingDuplicates: Bool              // ← NEW
+    let duplicateResult: DuplicateCheckResult?
+    let isCheckingDuplicates: Bool
     
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.medium) {
@@ -443,7 +445,7 @@ struct AIAnalysisCard: View {
                 }
             }
             
-            // ← NEW: Duplicate Warning Section
+            // Duplicate Warning Section
             if isCheckingDuplicates {
                 HStack {
                     ProgressView()
@@ -494,8 +496,6 @@ struct AIAnalysisCard: View {
         .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
     }
 }
-
-// Keep existing TagChip, FlowLayout, and AnalysisRow components...
 
 struct TagChip: View {
     let text: String
