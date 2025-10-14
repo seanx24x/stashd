@@ -276,32 +276,23 @@ struct HorizontalCollectionCard: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.small) {
-            // Cover Image
-            Group {
-                if let coverURL = collection.coverImageURL {
-                    CachedAsyncImage(url: coverURL) { image in
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    } placeholder: {
-                        Rectangle()
-                            .fill(Color.surfaceElevated)
-                            .overlay {
-                                ProgressView()
-                            }
+            // Cover Image - SUPER CLEAN NOW! ✨
+            if let coverURL = collection.coverImageURL {
+                CachedAsyncImage(url: coverURL)
+                    .scaledToFill()
+                    .frame(width: 200, height: 200)
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
+            } else {
+                Rectangle()
+                    .fill(Color.surfaceElevated)
+                    .frame(width: 200, height: 200)
+                    .overlay {
+                        Image(systemName: collection.categoryEnum.iconName)
+                            .font(.title)
+                            .foregroundStyle(.textTertiary)
                     }
-                } else {
-                    Rectangle()
-                        .fill(Color.surfaceElevated)
-                        .overlay {
-                            Image(systemName: collection.category.iconName)
-                                .font(.title)
-                                .foregroundStyle(.textTertiary)
-                        }
-                }
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
             }
-            .frame(width: 200, height: 200)
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
             
             // Info
             VStack(alignment: .leading, spacing: Spacing.xSmall) {
@@ -321,7 +312,7 @@ struct HorizontalCollectionCard: View {
                     if collection.likes.count > 0 {
                         Label("\(collection.likes.count)", systemImage: "heart")
                     }
-                    Label("\(collection.items.count)", systemImage: "square.stack.3d.up")
+                    Label("\(collection.items?.count ?? 0)", systemImage: "square.stack.3d.up")
                 }
                 .font(.labelSmall)
                 .foregroundStyle(.textTertiary)
@@ -363,31 +354,22 @@ struct ExploreCollectionCard: View {
     
     var body: some View {
         HStack(spacing: Spacing.medium) {
-            // Thumbnail
-            Group {
-                if let coverURL = collection.coverImageURL {
-                    CachedAsyncImage(url: coverURL) { image in
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    } placeholder: {
-                        Rectangle()
-                            .fill(Color.surfaceElevated)
-                            .overlay {
-                                ProgressView()
-                            }
+            // Thumbnail - SIMPLE! ✨
+            if let coverURL = collection.coverImageURL {
+                CachedAsyncImage(url: coverURL)
+                    .scaledToFill()
+                    .frame(width: 80, height: 80)
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
+            } else {
+                Rectangle()
+                    .fill(Color.surfaceElevated)
+                    .frame(width: 80, height: 80)
+                    .overlay {
+                        Image(systemName: collection.categoryEnum.iconName)
+                            .foregroundStyle(.textTertiary)
                     }
-                } else {
-                    Rectangle()
-                        .fill(Color.surfaceElevated)
-                        .overlay {
-                            Image(systemName: collection.category.iconName)
-                                .foregroundStyle(.textTertiary)
-                        }
-                }
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
             }
-            .frame(width: 80, height: 80)
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
             
             // Info
             VStack(alignment: .leading, spacing: Spacing.xSmall) {
@@ -406,8 +388,8 @@ struct ExploreCollectionCard: View {
                     if collection.likes.count > 0 {
                         Label("\(collection.likes.count)", systemImage: "heart")
                     }
-                    Label("\(collection.items.count)", systemImage: "square.stack.3d.up")
-                    Label(collection.category.rawValue, systemImage: collection.category.iconName)
+                    Label("\(collection.items?.count ?? 0)", systemImage: "square.stack.3d.up")
+                    Label(collection.categoryEnum.rawValue, systemImage: collection.categoryEnum.iconName)
                 }
                 .font(.labelSmall)
                 .foregroundStyle(.textTertiary)

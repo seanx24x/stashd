@@ -33,6 +33,12 @@ final class CollectionModel {
     @Relationship(deleteRule: .cascade, inverse: \CollectionItem.collection)
     var items: [CollectionItem]?
     
+    @Relationship(deleteRule: .cascade, inverse: \Comment.collection)
+    var comments: [Comment] = []
+    
+    @Relationship(deleteRule: .cascade, inverse: \Like.collection)
+    var likes: [Like] = []
+    
     @Relationship(deleteRule: .nullify)
     var owner: UserProfile?
     
@@ -85,6 +91,8 @@ final class CollectionModel {
         self.likeCount = 0
         self.commentCount = 0
         self.items = []
+        self.comments = []
+        self.likes = []
         self.owner = owner
         
         // Encrypt the estimated value on init

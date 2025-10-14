@@ -11,6 +11,8 @@
 import SwiftUI
 import SwiftData
 
+// File: Features/Collections/Views/EditCollectionView.swift
+
 struct EditCollectionView: View {
     let collection: CollectionModel
     
@@ -21,7 +23,7 @@ struct EditCollectionView: View {
     
     @State private var title: String
     @State private var description: String
-    @State private var selectedCategory: CollectionCategory
+    @State private var selectedCategory: CollectionCategory  // ← This expects CollectionCategory enum
     @State private var coverImage: UIImage?
     @State private var hasChanges = false
     
@@ -31,11 +33,12 @@ struct EditCollectionView: View {
         case title, description
     }
     
+    // ✅ FIX: Use categoryEnum computed property instead of category directly
     init(collection: CollectionModel) {
         self.collection = collection
         _title = State(initialValue: collection.title)
         _description = State(initialValue: collection.collectionDescription ?? "")
-        _selectedCategory = State(initialValue: collection.category)
+        _selectedCategory = State(initialValue: collection.categoryEnum)  // ← CHANGED FROM collection.category
     }
     
     var isFormValid: Bool {

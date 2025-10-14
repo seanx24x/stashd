@@ -81,10 +81,12 @@ final class CollectionViewModel {
         }
         
         // Delete item images from Firebase Storage
-        for item in collection.items {
-            for imageURL in item.imageURLs {
-                Task {
-                    try? await StorageService.shared.deleteImage(at: imageURL)
+        if let items = collection.items {
+            for item in items {
+                for imageURL in item.imageURLs {
+                    Task {
+                        try? await StorageService.shared.deleteImage(at: imageURL)
+                    }
                 }
             }
         }
@@ -129,7 +131,7 @@ final class CollectionViewModel {
             
             collection.title = title
             collection.collectionDescription = description
-            collection.category = category
+            collection.category = category.rawValue
             collection.updatedAt = .now
             
             try modelContext.save()

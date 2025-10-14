@@ -42,11 +42,6 @@
 			path = App;
 			sourceTree = "<group>";
 		};
-		C0E1B5B42E98AB0D00D8A6BA /* Core */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Core;
-			sourceTree = "<group>";
-		};
 		C0E1B5B72E98AB3300D8A6BA /* Features */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Features;
@@ -84,7 +79,6 @@
 			children = (
 				C0E1B5A12E98AA2700D8A6BA /* stashd */,
 				C0E1B5B22E98AAFD00D8A6BA /* App */,
-				C0E1B5B42E98AB0D00D8A6BA /* Core */,
 				C0E1B5B72E98AB3300D8A6BA /* Features */,
 				C0E1B5C52E98ABC000D8A6BA /* DesignSystem */,
 				C0E1B5C92E98ABE400D8A6BA /* Navigation */,
@@ -118,7 +112,6 @@
 			fileSystemSynchronizedGroups = (
 				C0E1B5A12E98AA2700D8A6BA /* stashd */,
 				C0E1B5B22E98AAFD00D8A6BA /* App */,
-				C0E1B5B42E98AB0D00D8A6BA /* Core */,
 				C0E1B5B72E98AB3300D8A6BA /* Features */,
 				C0E1B5C52E98ABC000D8A6BA /* DesignSystem */,
 				C0E1B5C92E98ABE400D8A6BA /* Navigation */,

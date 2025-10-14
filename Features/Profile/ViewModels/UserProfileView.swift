@@ -38,7 +38,8 @@ struct UserProfileView: View {
                                     .frame(width: 100, height: 100)
                                     .overlay {
                                         if let avatarURL = user.avatarURL {
-                                            AsyncImage(url: avatarURL) { image in
+                                            // ✅ FIXED: Use CachedAsyncImage
+                                            CachedAsyncImage(url: avatarURL) { image in
                                                 image
                                                     .resizable()
                                                     .scaledToFill()
@@ -85,24 +86,21 @@ struct UserProfileView: View {
                                         value: viewModel.collectionCount,
                                         label: "Collections"
                                     ) {
-                                        HapticManager.shared.selection()  // ← ADD HAPTIC
-                                        // Could navigate to collections list
+                                        HapticManager.shared.selection()
                                     }
                                     
                                     StatButton(
                                         value: viewModel.followerCount,
                                         label: "Followers"
                                     ) {
-                                        HapticManager.shared.selection()  // ← ADD HAPTIC
-                                        // Could navigate to followers list
+                                        HapticManager.shared.selection()
                                     }
                                     
                                     StatButton(
                                         value: viewModel.followingCount,
                                         label: "Following"
                                     ) {
-                                        HapticManager.shared.selection()  // ← ADD HAPTIC
-                                        // Could navigate to following list
+                                        HapticManager.shared.selection()
                                     }
                                 }
                                 .padding(.top, Spacing.small)
@@ -110,7 +108,7 @@ struct UserProfileView: View {
                                 // Follow Button (if not own profile)
                                 if !isOwnProfile {
                                     Button {
-                                        HapticManager.shared.light()  // ← ADD HAPTIC
+                                        HapticManager.shared.light()
                                         withAnimation(.spring(response: 0.3)) {
                                             viewModel.toggleFollow()
                                         }
@@ -151,7 +149,7 @@ struct UserProfileView: View {
                                     UserCollectionsGrid(
                                         collections: viewModel.collections,
                                         onCollectionTap: { collection in
-                                            HapticManager.shared.light()  // ← ADD HAPTIC
+                                            HapticManager.shared.light()
                                             coordinator.navigate(to: .collectionDetail(collection.id))
                                         }
                                     )
@@ -162,7 +160,7 @@ struct UserProfileView: View {
                     .padding(.bottom, Spacing.xxLarge)
                 }
                 .refreshable {
-                    HapticManager.shared.light()  // ← ADD HAPTIC
+                    HapticManager.shared.light()
                     await viewModel.loadUser()
                 }
             } else {
@@ -174,7 +172,7 @@ struct UserProfileView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 if isOwnProfile {
                     Button {
-                        HapticManager.shared.selection()  // ← ADD HAPTIC
+                        HapticManager.shared.selection()
                         // Navigate to settings/edit profile
                     } label: {
                         Image(systemName: "gearshape")
@@ -209,7 +207,7 @@ struct StatButton: View {
                 Text("\(value)")
                     .font(.headlineMedium)
                     .foregroundStyle(.textPrimary)
-                    .contentTransition(.numericText())  // ← ADD SMOOTH NUMBER ANIMATION
+                    .contentTransition(.numericText())
                 
                 Text(label)
                     .font(.labelMedium)
@@ -228,7 +226,7 @@ struct EmptyCollectionsStateView: View {
             Image(systemName: "square.stack.3d.up")
                 .font(.system(size: 48))
                 .foregroundStyle(.textTertiary)
-                .symbolEffect(.pulse)  // ← ADD SUBTLE ANIMATION
+                .symbolEffect(.pulse)
             
             VStack(spacing: Spacing.small) {
                 Text("No collections yet")
@@ -276,38 +274,32 @@ struct UserCollectionThumbnail: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xSmall) {
-            Group {
-                if let coverURL = collection.coverImageURL {
-                    AsyncImage(url: coverURL) { image in
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    } placeholder: {
-                        Rectangle()
-                            .fill(Color.surfaceElevated)
-                            .overlay {
-                                ProgressView()
-                            }
+            // ✅ FIXED: Use CachedAsyncImage
+            if let coverURL = collection.coverImageURL {
+                CachedAsyncImage(url: coverURL)
+                    .scaledToFill()
+                    .frame(height: 160)
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
+            } else {
+                Rectangle()
+                    .fill(Color.surfaceElevated)
+                    .frame(height: 160)
+                    .overlay {
+                        // ✅ FIXED: Use categoryEnum instead of category
+                        Image(systemName: collection.categoryEnum.iconName)
+                            .font(.title)
+                            .foregroundStyle(.textTertiary)
                     }
-                } else {
-                    Rectangle()
-                        .fill(Color.surfaceElevated)
-                        .overlay {
-                            Image(systemName: collection.category.iconName)
-                                .font(.title)
-                                .foregroundStyle(.textTertiary)
-                        }
-                }
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
             }
-            .frame(height: 160)
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
             
             Text(collection.title)
                 .font(.labelLarge)
                 .foregroundStyle(.textPrimary)
                 .lineLimit(1)
             
-            Text("\(collection.items.count) items")
+            // ✅ FIXED: Safely unwrap optional items array
+            Text("\(collection.items?.count ?? 0) items")
                 .font(.labelSmall)
                 .foregroundStyle(.textSecondary)
         }

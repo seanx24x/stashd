@@ -24,18 +24,31 @@ final class CollectionInsightsService {
     
     private init() {}
     
-    // Calculate basic statistics
+    // MARK: - Calculate basic statistics
+    
     func calculateStats(for collection: CollectionModel) -> CollectionStats {
-        let totalValue = collection.items.reduce(Decimal(0)) { $0 + $1.estimatedValue }
-        let averageValue = collection.items.isEmpty ? 0 : totalValue / Decimal(collection.items.count)
+        // ✅ FIX: Safely unwrap items array
+        guard let items = collection.items, !items.isEmpty else {
+            return CollectionStats(
+                totalValue: 0,
+                averageValue: 0,
+                itemCount: 0,
+                mintConditionCount: 0,
+                uniqueTagsCount: 0,
+                topValuedItems: []
+            )
+        }
         
-        let itemsByCondition = Dictionary(grouping: collection.items) { $0.condition }
+        let totalValue = items.reduce(Decimal(0)) { $0 + $1.estimatedValue }
+        let averageValue = totalValue / Decimal(items.count)
+        
+        let itemsByCondition = Dictionary(grouping: items) { $0.condition }
         let mintCount = itemsByCondition[.mint]?.count ?? 0
         
-        let allTags = collection.items.flatMap { $0.tags }
+        let allTags = items.flatMap { $0.tags }
         let uniqueTags = Set(allTags)
         
-        let topValuedItems = collection.items
+        let topValuedItems = items
             .sorted { $0.estimatedValue > $1.estimatedValue }
             .prefix(3)
             .map { $0.name }
@@ -43,23 +56,27 @@ final class CollectionInsightsService {
         return CollectionStats(
             totalValue: totalValue,
             averageValue: averageValue,
-            itemCount: collection.items.count,
+            itemCount: items.count,
             mintConditionCount: mintCount,
             uniqueTagsCount: uniqueTags.count,
             topValuedItems: Array(topValuedItems)
         )
     }
     
-    // Generate AI-powered insights
+    // MARK: - Generate AI-powered insights
+    
     func generateInsights(
         for collection: CollectionModel,
         stats: CollectionStats
     ) async throws -> CollectionInsights {
+        // ✅ FIX: Use categoryEnum computed property instead of .rawValue on String
+        let categoryName = collection.categoryEnum.rawValue
+        
         let prompt = """
         Analyze this collection and provide insights in JSON format:
         
         Collection: \(collection.title)
-        Category: \(collection.category.rawValue)
+        Category: \(categoryName)
         Items: \(stats.itemCount)
         Total Value: $\(stats.totalValue)
         Average Item Value: $\(stats.averageValue)
@@ -232,21 +249,25 @@ final class CollectionInsightsService {
         for collection: CollectionModel
     ) async throws -> [CompletionSuggestion] {
         
-        if collection.items.isEmpty {
+        // ✅ FIX: Safely unwrap items array
+        guard let items = collection.items, !items.isEmpty else {
             return []
         }
         
-        let itemsList = collection.items.prefix(10).map { item in
+        let itemsList = items.prefix(10).map { item in
             "- \(item.name)"
         }.joined(separator: "\n")
         
+        // ✅ FIX: Use categoryEnum computed property
+        let categoryName = collection.categoryEnum.rawValue
+        
         let prompt = """
-        Analyze this \(collection.category.rawValue) collection and suggest items to complete it:
+        Analyze this \(categoryName) collection and suggest items to complete it:
         
         CURRENT ITEMS:
         \(itemsList)
         
-        Collection has \(collection.items.count) total items.
+        Collection has \(items.count) total items.
         
         Suggest 3-5 items that would complement this collection well.
         

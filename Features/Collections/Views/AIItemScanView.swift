@@ -253,10 +253,13 @@ struct AIItemScanView: View {
         isCheckingDuplicates = true
         
         do {
+            // ✅ FIX: Safely unwrap optional items array
+            let existingItems = collection.items ?? []
+            
             let duplicateResult = try await CollectionInsightsService.shared.checkForDuplicates(
                 newItemName: result.name,
                 newItemDescription: result.description,
-                existingItems: collection.items
+                existingItems: existingItems  // ← Use unwrapped array
             )
             
             await MainActor.run {

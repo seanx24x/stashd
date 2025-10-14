@@ -57,9 +57,9 @@ final class ExploreViewModel {
     func applyFilters() {
         var results = allCollections
         
-        // Filter by category
+        // ✅ FIX: Filter by category - compare String to String
         if let category = selectedCategory {
-            results = results.filter { $0.category == category }
+            results = results.filter { $0.category == category.rawValue }  // ← CHANGED
         }
         
         // Filter by search text (including tags)
@@ -75,14 +75,17 @@ final class ExploreViewModel {
                     return true
                 }
                 
-                // ← NEW: Search in item tags
-                let hasMatchingTag = collection.items.contains { item in
-                    item.tags.contains { tag in
-                        tag.localizedCaseInsensitiveContains(searchText)
+                // Search in item tags
+                if let items = collection.items {  // ← SAFELY UNWRAP
+                    let hasMatchingTag = items.contains { item in
+                        item.tags.contains { tag in
+                            tag.localizedCaseInsensitiveContains(searchText)
+                        }
                     }
+                    return hasMatchingTag
                 }
                 
-                return hasMatchingTag
+                return false
             }
         }
         
@@ -95,10 +98,11 @@ final class ExploreViewModel {
     }
     
     func collectionsForCategory(_ category: CollectionCategory) -> [CollectionModel] {
-        allCollections.filter { $0.category == category }
+        // ✅ FIX: Compare String to String
+        allCollections.filter { $0.category == category.rawValue }  // ← CHANGED
     }
     
-    // ← NEW: Search by specific tag
+    // Search by specific tag
     func searchByTag(_ tag: String) {
         searchText = tag
     }

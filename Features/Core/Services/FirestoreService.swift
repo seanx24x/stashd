@@ -5,7 +5,6 @@
 //  Created by Sean Lynch on 10/11/25.
 //
 
-
 // File: Core/Services/FirestoreService.swift
 
 import Foundation
@@ -74,17 +73,16 @@ final class FirestoreService {
             "id": collection.id.uuidString,
             "title": collection.title,
             "description": collection.collectionDescription ?? "",
-            "category": collection.category.rawValue,
+            "category": collection.category, // ✅ Already a String, no .rawValue needed
             "coverImageURL": collection.coverImageURL?.absoluteString ?? "",
             "ownerUID": ownerUID,
             "isPublic": collection.isPublic,
-            "tags": collection.tags,
             "createdAt": Timestamp(date: collection.createdAt),
             "updatedAt": Timestamp(date: collection.updatedAt),
             "viewCount": collection.viewCount,
-            "likeCount": collection.likes.count,
-            "commentCount": collection.comments.count,
-            "itemCount": collection.items.count
+            "likeCount": collection.likeCount, // ✅ Using the existing property
+            "commentCount": collection.commentCount, // ✅ Using the existing property
+            "itemCount": collection.items?.count ?? 0 // ✅ Safely unwrapping optional array
         ]
         
         try await db.collection(collectionsCollection)

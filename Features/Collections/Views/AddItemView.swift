@@ -416,8 +416,8 @@ struct AddItemView: View {
                     imageURLs: imageURLs
                 )
                 
-                // Set display order based on current items count
-                item.displayOrder = collection.items.count
+                // ✅ FIX: Safely handle optional items array
+                item.displayOrder = collection.items?.count ?? 0
                 
                 // Set estimated value from either field (prioritize current value over purchase price)
                 if let valueEstimate = Decimal(string: estimatedValue) {

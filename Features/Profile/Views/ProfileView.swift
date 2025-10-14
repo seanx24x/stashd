@@ -96,7 +96,7 @@ struct ProfileView: View {
             UserProfileView(userID: userID)
             
         case .itemDetail(let itemID):
-            ItemDetailViewLoader(itemID: itemID)  // ← FIXED
+            ItemDetailViewLoader(itemID: itemID)
             
         case .editCollection(let collectionID):
             Text("Edit Collection")
@@ -181,32 +181,24 @@ struct ProfileCollectionCard: View {
     
     var body: some View {
         HStack(spacing: Spacing.medium) {
-            // Cover Image
-            Group {
-                if let coverURL = collection.coverImageURL {
-                    CachedAsyncImage(url: coverURL) { image in
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    } placeholder: {
-                        Rectangle()
-                            .fill(Color.surfaceElevated)
-                            .overlay {
-                                ProgressView()
-                            }
+            // ✅ FIXED: Cover Image with new CachedAsyncImage
+            if let coverURL = collection.coverImageURL {
+                CachedAsyncImage(url: coverURL)
+                    .scaledToFill()
+                    .frame(width: 80, height: 80)
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
+            } else {
+                Rectangle()
+                    .fill(Color.surfaceElevated)
+                    .frame(width: 80, height: 80)
+                    .overlay {
+                        // ✅ FIXED: Use categoryEnum instead of category
+                        Image(systemName: collection.categoryEnum.iconName)
+                            .font(.title)
+                            .foregroundStyle(.textTertiary)
                     }
-                } else {
-                    Rectangle()
-                        .fill(Color.surfaceElevated)
-                        .overlay {
-                            Image(systemName: collection.category.iconName)
-                                .font(.title)
-                                .foregroundStyle(.textTertiary)
-                        }
-                }
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
             }
-            .frame(width: 80, height: 80)
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
             
             // Info
             VStack(alignment: .leading, spacing: Spacing.xSmall) {
@@ -215,7 +207,8 @@ struct ProfileCollectionCard: View {
                     .foregroundStyle(.textPrimary)
                     .lineLimit(2)
                 
-                Label(collection.category.rawValue, systemImage: collection.category.iconName)
+                // ✅ FIXED: Use categoryEnum
+                Label(collection.categoryEnum.rawValue, systemImage: collection.categoryEnum.iconName)
                     .font(.labelSmall)
                     .foregroundStyle(.textSecondary)
                 
@@ -223,7 +216,8 @@ struct ProfileCollectionCard: View {
                     if collection.likes.count > 0 {
                         Label("\(collection.likes.count)", systemImage: "heart")
                     }
-                    Label("\(collection.items.count)", systemImage: "square.stack.3d.up")
+                    // ✅ FIXED: Safely unwrap optional items array
+                    Label("\(collection.items?.count ?? 0)", systemImage: "square.stack.3d.up")
                 }
                 .font(.labelSmall)
                 .foregroundStyle(.textTertiary)

@@ -10,6 +10,8 @@
 import SwiftUI
 import SwiftData
 
+// File: Features/Feed/Views/CollectionFeedCard.swift
+
 struct CollectionFeedCard: View {
     let collection: CollectionModel
     let isLiked: Bool
@@ -28,7 +30,7 @@ struct CollectionFeedCard: View {
                             .frame(width: 40, height: 40)
                             .overlay {
                                 if let avatarURL = owner.avatarURL {
-                                    CachedAsyncImage(url: avatarURL) { image in  // ← CHANGED TO CachedAsyncImage
+                                    CachedAsyncImage(url: avatarURL) { image in
                                         image
                                             .resizable()
                                             .scaledToFill()
@@ -69,7 +71,7 @@ struct CollectionFeedCard: View {
             VStack(alignment: .leading, spacing: Spacing.small) {
                 // Cover image
                 if let coverURL = collection.coverImageURL {
-                    CachedAsyncImage(url: coverURL) { image in  // ← CHANGED TO CachedAsyncImage
+                    CachedAsyncImage(url: coverURL) { image in
                         image
                             .resizable()
                             .scaledToFill()
@@ -83,17 +85,17 @@ struct CollectionFeedCard: View {
                     .frame(height: 300)
                     .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
                 } else {
-                    // Placeholder with category icon
+                    // ✅ FIX: Use categoryEnum instead of category
                     Rectangle()
                         .fill(Color.surfaceElevated)
                         .frame(height: 300)
                         .overlay {
                             VStack(spacing: Spacing.small) {
-                                Image(systemName: collection.category.iconName)
+                                Image(systemName: collection.categoryEnum.iconName)  // ← CHANGED
                                     .font(.system(size: 48))
                                     .foregroundStyle(.textTertiary)
                                 
-                                Text(collection.category.rawValue)
+                                Text(collection.categoryEnum.rawValue)  // ← CHANGED
                                     .font(.labelMedium)
                                     .foregroundStyle(.textSecondary)
                             }
@@ -162,7 +164,7 @@ struct CollectionFeedCard: View {
                     Image(systemName: "square.stack.3d.up")
                         .foregroundStyle(.textSecondary)
                     
-                    Text("\(collection.items.count)")
+                    Text("\(collection.items?.count ?? 0)")  // ← Also safely unwrap items
                         .font(.labelMedium)
                         .foregroundStyle(.textSecondary)
                 }
@@ -174,6 +176,6 @@ struct CollectionFeedCard: View {
         .background(.surfaceElevated)
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large))
         .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
-        .id(collection.id)  // ← ADD STABLE ID FOR PERFORMANCE
+        .id(collection.id)
     }
 }

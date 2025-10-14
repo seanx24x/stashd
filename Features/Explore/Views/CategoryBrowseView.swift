@@ -5,7 +5,6 @@
 //  Created by Sean Lynch on 10/11/25.
 //
 
-
 // File: Features/Explore/Views/CategoryBrowseView.swift
 
 import SwiftUI
@@ -48,22 +47,12 @@ struct CategoryCollectionCard: View {
             // Cover Image
             Group {
                 if let coverURL = collection.coverImageURL {
-                    AsyncImage(url: coverURL) { image in
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    } placeholder: {
-                        Rectangle()
-                            .fill(Color.surfaceElevated)
-                            .overlay {
-                                ProgressView()
-                            }
-                    }
+                    CustomAsyncImageView(url: coverURL)
                 } else {
                     Rectangle()
-                        .fill(Color.surfaceElevated)
+                        .fill(.surfaceElevated)
                         .overlay {
-                            Image(systemName: collection.category.iconName)
+                            Image(systemName: getCategoryIcon(collection.category))
                                 .font(.system(size: 48))
                                 .foregroundStyle(.textTertiary)
                         }
@@ -92,9 +81,9 @@ struct CategoryCollectionCard: View {
                 }
                 
                 HStack(spacing: Spacing.medium) {
-                    Label("\(collection.likes.count)", systemImage: "heart")
-                    Label("\(collection.comments.count)", systemImage: "bubble.left")
-                    Label("\(collection.items.count)", systemImage: "square.stack.3d.up")
+                    Label("\(collection.likeCount)", systemImage: "heart")
+                    Label("\(collection.commentCount)", systemImage: "bubble.left")
+                    Label("\(collection.itemCount)", systemImage: "square.stack.3d.up")
                 }
                 .font(.labelMedium)
                 .foregroundStyle(.textTertiary)
@@ -128,6 +117,87 @@ struct EmptyCategoryView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.top, Spacing.xxLarge)
+    }
+}
+
+// Helper view to avoid conflicts with AsyncImage
+struct CustomAsyncImageView: View {
+    let url: URL
+    
+    var body: some View {
+        AsyncImage(url: url) { phase in
+            switch phase {
+            case .success(let image):
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            case .failure(_):
+                Rectangle()
+                    .fill(.surfaceElevated)
+                    .overlay {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 24))
+                            .foregroundStyle(.textTertiary)
+                    }
+            case .empty:
+                Rectangle()
+                    .fill(.surfaceElevated)
+                    .overlay {
+                        ProgressView()
+                    }
+            @unknown default:
+                Rectangle()
+                    .fill(.surfaceElevated)
+            }
+        }
+    }
+}
+
+// MARK: - Helper Functions (File-level)
+
+// Helper function to get icon for category string
+private func getCategoryIcon(_ category: String) -> String {
+    switch category.lowercased() {
+    case "vinyl", "vinyl records":
+        return "opticaldisc"
+    case "sneakers", "shoes":
+        return "shoe"
+    case "books":
+        return "book"
+    case "art":
+        return "paintpalette"
+    case "toys", "toys & action figures":
+        return "teddybear"
+    case "fashion":
+        return "tshirt"
+    case "tech", "tech & gadgets":
+        return "laptopcomputer"
+    case "movies":
+        return "film"
+    case "video games":
+        return "gamecontroller"
+    case "comics":
+        return "book.pages"
+    case "watches":
+        return "watch"
+    case "trading cards", "sports cards", "pokemon cards":
+        return "rectangle.stack"
+    case "lego":
+        return "square.stack.3d.up"
+    case "tabletop gaming", "board games":
+        return "dice"
+    case "knives":
+        return "triangle"
+    case "pens":
+        return "pencil"
+    case "cameras":
+        return "camera"
+    case "coins":
+        return "dollarsign.circle"
+    case "stamps":
+        return "envelope"
+    default:
+        return "square.stack.3d.up"
     }
 }
 

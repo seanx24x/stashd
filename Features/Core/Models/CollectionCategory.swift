@@ -151,42 +151,41 @@ enum CollectionCategory: String, Codable, CaseIterable {
     var apiType: String? {
         switch self {
         case .vinyl:
-            return "discogs"
+            return "Discogs"
         case .movies:
-            return "tmdb"
+            return "TMDB"
         case .books:
-            return "googleBooks"
+            return "Google Books"
         case .videoGames:
-            return "igdb"
+            return "IGDB"
         case .tabletopGaming, .boardGames:
-            return "boardGameGeek"
+            return "BoardGameGeek"
         case .pokemonCards:
-            return "pokemonTCG"
+            return "Pokemon TCG"
         default:
             return nil
         }
     }
     
-    // Description for category
     var description: String {
         switch self {
         // Entertainment & Media
         case .vinyl:
-            return "Vinyl records, albums, and singles"
+            return "Vinyl records, LPs, and albums"
         case .movies:
-            return "Movies, films, and cinema collections"
+            return "Movies, DVDs, Blu-rays, and film"
         case .books:
             return "Books, novels, and literature"
         case .comics:
-            return "Comic books, graphic novels, and manga"
+            return "Comics, manga, and graphic novels"
         case .videoGames:
             return "Video games across all platforms"
             
         // Fashion & Accessories
         case .sneakers:
-            return "Sneakers, shoes, and footwear"
+            return "Sneakers and footwear"
         case .fashion:
-            return "Clothing, streetwear, and apparel"
+            return "Fashion, clothing, and apparel"
         case .watches:
             return "Watches and timepieces"
             
@@ -194,25 +193,25 @@ enum CollectionCategory: String, Codable, CaseIterable {
         case .tradingCards:
             return "Trading cards of all types"
         case .sportsCards:
-            return "Sports trading cards and memorabilia"
+            return "Sports trading cards"
         case .pokemonCards:
             return "Pokemon trading card game"
             
         // Toys & Models
         case .toys:
-            return "Action figures, toys, and collectibles"
+            return "Toys, action figures, and collectibles"
         case .lego:
             return "LEGO sets and builds"
         case .scaleModels:
-            return "Scale models, aircraft, cars, and ships"
+            return "Scale models and replicas"
         case .vinylToys:
-            return "Designer toys and vinyl figures"
+            return "Designer vinyl toys and art toys"
             
         // Gaming
         case .tabletopGaming:
-            return "Tabletop games, RPGs, and board games"
+            return "Tabletop RPGs and gaming"
         case .boardGames:
-            return "Board games and strategy games"
+            return "Board games and card games"
         case .dice:
             return "Dice sets and polyhedral dice"
         case .miniatures:
