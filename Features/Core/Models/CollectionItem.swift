@@ -16,12 +16,18 @@ final class CollectionItem {
     var estimatedValue: Decimal
     var condition: ItemCondition?
     var purchaseDate: Date?
-    var imageURLs: [URL]
+    
+    // ✅ FIXED: Proper transformable attributes for arrays
+    @Attribute(.transformable(by: "NSSecureUnarchiveFromDataTransformerName"))
+    var imageURLs: [URL] = []
+    
     var isFavorite: Bool
     var displayOrder: Int
     var createdAt: Date
     var updatedAt: Date
-    var tags: [String]
+    
+    @Attribute(.transformable(by: "NSSecureUnarchiveFromDataTransformerName"))
+    var tags: [String] = []
     
     // Relationship - make it non-optional with default
     var collection: CollectionModel
