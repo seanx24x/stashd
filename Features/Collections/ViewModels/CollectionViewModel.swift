@@ -32,6 +32,14 @@ final class CollectionViewModel {
         errorMessage = nil
         
         do {
+            // ✅ NEW: Validate inputs
+            try ValidationService.validateCollectionTitle(title)
+            try ValidationService.validateCollectionDescription(description)
+            
+            // ✅ NEW: Sanitize inputs
+            let sanitizedTitle = ValidationService.sanitizeInput(title)
+            let sanitizedDescription = description.map { ValidationService.sanitizeInput($0) }
+            
             // Simulate upload delay
             try await Task.sleep(for: .milliseconds(500))
             
@@ -42,13 +50,13 @@ final class CollectionViewModel {
                 coverURL = try await StorageService.shared.uploadCollectionCover(image, collectionID: collectionID.uuidString)
             }
             
-            // Create the collection
+            // Create the collection with sanitized values
             let collection = CollectionModel(
-                title: title,
+                title: sanitizedTitle,
                 category: category,
                 owner: owner
             )
-            collection.collectionDescription = description
+            collection.collectionDescription = sanitizedDescription
             collection.coverImageURL = coverURL
             collection.isPublic = true
             
@@ -59,11 +67,11 @@ final class CollectionViewModel {
             // Sync to Firestore
             try await FirestoreService.shared.saveCollection(collection)
             
-            HapticManager.shared.success()  // ← ADD SUCCESS HAPTIC
+            HapticManager.shared.success()
             
             isLoading = false
         } catch {
-            HapticManager.shared.error()  // ← ADD ERROR HAPTIC
+            HapticManager.shared.error()
             isLoading = false
             errorMessage = error.localizedDescription
             throw error
@@ -94,7 +102,7 @@ final class CollectionViewModel {
         modelContext.delete(collection)
         try? modelContext.save()
         
-        HapticManager.shared.success()  // ← ADD SUCCESS HAPTIC
+        HapticManager.shared.success()
     }
     
     func updateCollection(
@@ -112,6 +120,14 @@ final class CollectionViewModel {
         errorMessage = nil
         
         do {
+            // ✅ NEW: Validate inputs
+            try ValidationService.validateCollectionTitle(title)
+            try ValidationService.validateCollectionDescription(description)
+            
+            // ✅ NEW: Sanitize inputs
+            let sanitizedTitle = ValidationService.sanitizeInput(title)
+            let sanitizedDescription = description.map { ValidationService.sanitizeInput($0) }
+            
             try await Task.sleep(for: .milliseconds(300))
             
             // Update cover image if new one provided
@@ -129,8 +145,9 @@ final class CollectionViewModel {
                 collection.coverImageURL = newCoverURL
             }
             
-            collection.title = title
-            collection.collectionDescription = description
+            // Update with sanitized values
+            collection.title = sanitizedTitle
+            collection.collectionDescription = sanitizedDescription
             collection.category = category.rawValue
             collection.updatedAt = .now
             
@@ -139,11 +156,11 @@ final class CollectionViewModel {
             // Sync to Firestore
             try await FirestoreService.shared.saveCollection(collection)
             
-            HapticManager.shared.success()  // ← ADD SUCCESS HAPTIC
+            HapticManager.shared.success()
             
             isLoading = false
         } catch {
-            HapticManager.shared.error()  // ← ADD ERROR HAPTIC
+            HapticManager.shared.error()
             isLoading = false
             errorMessage = error.localizedDescription
             throw error
