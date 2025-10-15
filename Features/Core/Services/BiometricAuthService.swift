@@ -2,14 +2,6 @@
 //  BiometricAuthService.swift
 //  stashd
 //
-//  Created by Sean Lynch on 10/15/25.
-//
-
-
-//
-//  BiometricAuthService.swift
-//  stashd
-//
 //  Created by Sean Lynch
 //
 
@@ -60,6 +52,12 @@ final class BiometricAuthService {
                     "Biometric auth failed: \(biometricError.localizedDescription)",
                     context: "Biometric Auth"
                 )
+                
+                // ✅ NEW: Log security event
+                SecurityMonitoringService.shared.logEvent(
+                    .biometricAuthFailed,
+                    details: ["reason": biometricError.localizedDescription]
+                )
                 return .failure(biometricError)
             }
             return .failure(.notAvailable)
@@ -77,8 +75,19 @@ final class BiometricAuthService {
                     "Biometric authentication succeeded",
                     context: "Biometric Auth"
                 )
+                
+                // ✅ NEW: Log security event
+                SecurityMonitoringService.shared.logEvent(
+                    .biometricAuthUsed,
+                    details: ["type": getBiometricTypeName()]
+                )
                 return .success(true)
             } else {
+                // ✅ NEW: Log security event
+                SecurityMonitoringService.shared.logEvent(
+                    .biometricAuthFailed,
+                    details: ["reason": "authentication_failed"]
+                )
                 return .failure(.authenticationFailed)
             }
         } catch let error as LAError {
@@ -87,11 +96,23 @@ final class BiometricAuthService {
                 "Biometric auth error: \(biometricError.localizedDescription)",
                 context: "Biometric Auth"
             )
+            
+            // ✅ NEW: Log security event
+            SecurityMonitoringService.shared.logEvent(
+                .biometricAuthFailed,
+                details: ["error": biometricError.localizedDescription]
+            )
             return .failure(biometricError)
         } catch {
             ErrorLoggingService.shared.logError(
                 error,
                 context: "Biometric authentication"
+            )
+            
+            // ✅ NEW: Log security event
+            SecurityMonitoringService.shared.logEvent(
+                .biometricAuthFailed,
+                details: ["error": "unknown"]
             )
             return .failure(.unknown)
         }
@@ -114,8 +135,19 @@ final class BiometricAuthService {
                     "Authentication succeeded (biometric or passcode)",
                     context: "Biometric Auth"
                 )
+                
+                // ✅ NEW: Log security event
+                SecurityMonitoringService.shared.logEvent(
+                    .authenticationSuccess,
+                    details: ["method": "biometric_or_passcode"]
+                )
                 return .success(true)
             } else {
+                // ✅ NEW: Log security event
+                SecurityMonitoringService.shared.logEvent(
+                    .authenticationFailed,
+                    details: ["method": "biometric_or_passcode"]
+                )
                 return .failure(.authenticationFailed)
             }
         } catch let error as LAError {
@@ -124,11 +156,23 @@ final class BiometricAuthService {
                 "Authentication error: \(biometricError.localizedDescription)",
                 context: "Biometric Auth"
             )
+            
+            // ✅ NEW: Log security event
+            SecurityMonitoringService.shared.logEvent(
+                .authenticationFailed,
+                details: ["error": biometricError.localizedDescription]
+            )
             return .failure(biometricError)
         } catch {
             ErrorLoggingService.shared.logError(
                 error,
                 context: "Authentication"
+            )
+            
+            // ✅ NEW: Log security event
+            SecurityMonitoringService.shared.logEvent(
+                .authenticationFailed,
+                details: ["error": "unknown"]
             )
             return .failure(.unknown)
         }

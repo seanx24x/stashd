@@ -56,27 +56,50 @@ final class SSLPinningService: NSObject {
                 "Failed to extract public key from server trust for \(host)",
                 context: "SSL Pinning"
             )
+            
+            // ✅ NEW: Log security event
+            SecurityMonitoringService.shared.logEvent(
+                .sslPinningFailed,
+                details: ["host": host, "reason": "no_public_key"]
+            )
             return false
         }
         
         // Get hash of server's public key
         let serverKeyHash = sha256Base64(publicKey: serverPublicKey)
-
+        
         // Check if server's key matches any pinned keys
         if pinnedHashes.contains(serverKeyHash) {
             ErrorLoggingService.shared.logInfo(
                 "SSL certificate validated for \(host)",
                 context: "SSL Pinning"
             )
+            
+            // ✅ NEW: Log security event
+            SecurityMonitoringService.shared.logEvent(
+                .sslPinningSuccess,
+                details: ["host": host]
+            )
             return true
         }
-
+        
         // No match found
         ErrorLoggingService.shared.logInfo(
             "SSL pinning validation failed for \(host)",
             context: "SSL Pinning"
         )
-
+        
+        // ✅ NEW: Log security event
+        SecurityMonitoringService.shared.logEvent(
+            .sslPinningFailed,
+            details: [
+                "host": host,
+                "reason": "hash_mismatch",
+                "expected": Array(pinnedHashes).joined(separator: ", "),
+                "got": serverKeyHash
+            ]
+        )
+        
         return false
     }
     
