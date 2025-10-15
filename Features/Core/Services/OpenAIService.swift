@@ -20,7 +20,7 @@ final class OpenAIService {
     // ✅ Rate limiter (10 calls per minute)
     private let rateLimiter = RateLimiter(maxCallsPerMinute: 10)
     
-    // ✅ NEW: SSL Pinning delegate and secure session
+    // ✅ SSL Pinning delegate and secure session
     private let sslPinningDelegate = SSLPinningDelegate()
     private lazy var secureSession: URLSession = {
         let configuration = URLSessionConfiguration.default
@@ -120,7 +120,7 @@ final class OpenAIService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         
-        // ✅ NEW: Use secure session with SSL pinning
+        // ✅ Use secure session with SSL pinning
         do {
             let (data, response) = try await secureSession.data(for: request)
             
@@ -132,6 +132,10 @@ final class OpenAIService {
                 )
                 throw error
             }
+            
+            // ✅ NEW: Validate response
+            try ResponseValidationService.shared.validateContentType(httpResponse)
+            try ResponseValidationService.shared.validateResponseSize(data, maxBytes: 5_000_000) // 5MB max
             
             guard httpResponse.statusCode == 200 else {
                 if let errorString = String(data: data, encoding: .utf8) {
@@ -285,13 +289,20 @@ final class OpenAIService {
         
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         
-        // ✅ NEW: Use secure session with SSL pinning
+        // ✅ Use secure session with SSL pinning
         do {
             let (data, response) = try await secureSession.data(for: request)
             
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else {
-                let statusCode = (response as? HTTPURLResponse)?.statusCode
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw OpenAIError.invalidResponse
+            }
+            
+            // ✅ NEW: Validate response
+            try ResponseValidationService.shared.validateContentType(httpResponse)
+            try ResponseValidationService.shared.validateResponseSize(data, maxBytes: 1_000_000) // 1MB max
+            
+            guard httpResponse.statusCode == 200 else {
+                let statusCode = httpResponse.statusCode
                 ErrorLoggingService.shared.logNetworkError(
                     OpenAIError.requestFailed,
                     endpoint: "OpenAI /chat/completions (generate description)",
@@ -412,13 +423,20 @@ final class OpenAIService {
         
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         
-        // ✅ NEW: Use secure session with SSL pinning
+        // ✅ Use secure session with SSL pinning
         do {
             let (data, response) = try await secureSession.data(for: request)
             
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else {
-                let statusCode = (response as? HTTPURLResponse)?.statusCode
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw OpenAIError.invalidResponse
+            }
+            
+            // ✅ NEW: Validate response
+            try ResponseValidationService.shared.validateContentType(httpResponse)
+            try ResponseValidationService.shared.validateResponseSize(data, maxBytes: 500_000) // 500KB max
+            
+            guard httpResponse.statusCode == 200 else {
+                let statusCode = httpResponse.statusCode
                 ErrorLoggingService.shared.logNetworkError(
                     OpenAIError.requestFailed,
                     endpoint: "OpenAI /chat/completions (generate tags)",
