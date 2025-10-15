@@ -2,14 +2,6 @@
 //  SSLPinningService.swift
 //  stashd
 //
-//  Created by Sean Lynch on 10/15/25.
-//
-
-
-//
-//  SSLPinningService.swift
-//  stashd
-//
 //  Created by Sean Lynch
 //
 
@@ -23,25 +15,22 @@ final class SSLPinningService: NSObject {
     
     // MARK: - Certificate Pinning Configuration
     
-    /// Pinned certificate hashes (SHA-256) for your domains
-    /// These should be updated when certificates are renewed
+    /// Pinned certificate hashes (SHA-256 in Base64) for your domains
     private let pinnedCertificates: [String: Set<String>] = [
-        // OpenAI API
+        // OpenAI API - Base64 encoded SHA-256 of public key
         "api.openai.com": [
-            // Add OpenAI's certificate hash here
-            // You'll get this by fetching the certificate
-            "LExv0hWBuW1l0adcaSGOiLj5Xh0FRUmbVxfMWWQXbc0="
+            "UsIYNqs3xXZTDzui2XKnR/f9keoCoDrNak4Q0z/vQiQ="
         ],
         
-        // Firebase
+        // Firebase Storage
         "firebasestorage.googleapis.com": [
             "542e59dvLJQqY9DZzWfn5YcvquPJBrH9v6OpWMe0ACg="
         ],
+        
+        // Firestore
         "firestore.googleapis.com": [
             "+4WwZpRnPmgUxgBPPxd6sP1t2bfrbjJxzayQGnyVi+A="
         ],
-        
-        // Add your other API domains here
     ]
     
     // MARK: - Certificate Validation
@@ -53,128 +42,68 @@ final class SSLPinningService: NSObject {
     ) -> Bool {
         // Get pinned certificates for this host
         guard let pinnedHashes = pinnedCertificates[host] else {
-            // No pinning configured for this host
+            // No pinning configured for this host - allow connection
             ErrorLoggingService.shared.logInfo(
-                "No SSL pinning configured for host: \(host)",
+                "No SSL pinning configured for host: \(host) - allowing connection",
                 context: "SSL Pinning"
             )
-            // Allow connection (but log it)
             return true
         }
         
-        // Get certificate chain from server
-        guard let certificates = getCertificates(from: serverTrust) else {
+        // Extract public keys from server trust and compare
+        guard let serverPublicKey = getPublicKey(from: serverTrust) else {
             ErrorLoggingService.shared.logInfo(
-                "Failed to get certificates from server trust",
+                "Failed to extract public key from server trust for \(host)",
                 context: "SSL Pinning"
             )
             return false
         }
         
-        // Check if any certificate in the chain matches our pinned hashes
-        for certificate in certificates {
-            let hash = sha256(certificate: certificate)
-            if pinnedHashes.contains(hash) {
-                ErrorLoggingService.shared.logInfo(
-                    "SSL certificate validated for \(host)",
-                    context: "SSL Pinning"
-                )
-                return true
-            }
+        // Get hash of server's public key
+        let serverKeyHash = sha256Base64(publicKey: serverPublicKey)
+
+        // Check if server's key matches any pinned keys
+        if pinnedHashes.contains(serverKeyHash) {
+            ErrorLoggingService.shared.logInfo(
+                "SSL certificate validated for \(host)",
+                context: "SSL Pinning"
+            )
+            return true
         }
-        
-        // No matching certificate found
+
+        // No match found
         ErrorLoggingService.shared.logInfo(
             "SSL pinning validation failed for \(host)",
             context: "SSL Pinning"
         )
-        
+
         return false
     }
     
     // MARK: - Helper Methods
     
-    /// Extract certificates from server trust
-    private func getCertificates(from serverTrust: SecTrust) -> [SecCertificate]? {
-        var certificates: [SecCertificate] = []
-        
-        // Get certificate count
-        let certificateCount = SecTrustGetCertificateCount(serverTrust)
-        
-        // Extract each certificate
-        for index in 0..<certificateCount {
-            if let certificate = SecTrustGetCertificateAtIndex(serverTrust, index) {
-                certificates.append(certificate)
-            }
+    /// Extract public key from server trust
+    private func getPublicKey(from serverTrust: SecTrust) -> SecKey? {
+        // Get the certificate from the trust
+        guard let certificate = SecTrustCopyCertificateChain(serverTrust) as? [SecCertificate],
+              let firstCert = certificate.first else {
+            return nil
         }
         
-        return certificates.isEmpty ? nil : certificates
+        // Extract public key from certificate
+        return SecCertificateCopyKey(firstCert)
     }
     
-    /// Calculate SHA-256 hash of certificate
-    private func sha256(certificate: SecCertificate) -> String {
-        let data = SecCertificateCopyData(certificate) as Data
-        let hash = SHA256.hash(data: data)
-        return hash.compactMap { String(format: "%02x", $0) }.joined()
-    }
-    
-    // MARK: - Public Key Pinning (Alternative Method)
-    
-    /// Validate server trust using public key pinning
-    func validateServerTrustWithPublicKey(
-        _ serverTrust: SecTrust,
-        forHost host: String
-    ) -> Bool {
-        // Get certificates
-        guard let certificates = getCertificates(from: serverTrust) else {
-            return false
-        }
-        
-        // Extract public keys and validate
-        for certificate in certificates {
-            if let publicKey = getPublicKey(from: certificate) {
-                let publicKeyHash = sha256(publicKey: publicKey)
-                
-                // Check against pinned public key hashes
-                if let pinnedHashes = pinnedCertificates[host],
-                   pinnedHashes.contains(publicKeyHash) {
-                    return true
-                }
-            }
-        }
-        
-        return false
-    }
-    
-    /// Extract public key from certificate
-    private func getPublicKey(from certificate: SecCertificate) -> SecKey? {
-        var publicKey: SecKey?
-        
-        let policy = SecPolicyCreateBasicX509()
-        var trust: SecTrust?
-        
-        let status = SecTrustCreateWithCertificates(
-            certificate,
-            policy,
-            &trust
-        )
-        
-        if status == errSecSuccess, let trust = trust {
-            publicKey = SecTrustCopyKey(trust)
-        }
-        
-        return publicKey
-    }
-    
-    /// Calculate SHA-256 hash of public key
-    private func sha256(publicKey: SecKey) -> String {
+    /// Calculate SHA-256 hash of public key in Base64 format
+    private func sha256Base64(publicKey: SecKey) -> String {
         var error: Unmanaged<CFError>?
         guard let publicKeyData = SecKeyCopyExternalRepresentation(publicKey, &error) as Data? else {
             return ""
         }
         
         let hash = SHA256.hash(data: publicKeyData)
-        return hash.compactMap { String(format: "%02x", $0) }.joined()
+        let hashData = Data(hash)
+        return hashData.base64EncodedString()
     }
 }
 
@@ -208,28 +137,6 @@ class SSLPinningDelegate: NSObject, URLSessionDelegate {
             )
             completionHandler(.cancelAuthenticationChallenge, nil)
         }
-    }
-}
-
-// MARK: - Certificate Hash Generator (Helper)
-
-extension SSLPinningService {
-    /// Generate certificate hash for a URL (use this during development)
-    func getCertificateHash(for urlString: String) async throws -> String {
-        guard let url = URL(string: urlString) else {
-            throw SSLPinningError.invalidURL
-        }
-        
-        let session = URLSession(configuration: .default)
-        let (_, response) = try await session.data(from: url)
-        
-        guard let httpResponse = response as? HTTPURLResponse,
-              let serverTrust = httpResponse.value(forHTTPHeaderField: "Server-Trust") else {
-            throw SSLPinningError.noServerTrust
-        }
-        
-        // This is a simplified version - you'd need to extract the actual certificate
-        return "CERTIFICATE_HASH"
     }
 }
 
