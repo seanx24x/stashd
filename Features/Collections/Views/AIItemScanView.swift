@@ -27,6 +27,7 @@ struct AIItemScanView: View {
     @State private var duplicateCheckResult: DuplicateCheckResult?
     @State private var showDuplicateWarning = false
     @State private var isCheckingDuplicates = false
+    @State private var selectedPhotoItem: PhotosPickerItem?
     
     var body: some View {
         NavigationStack {
@@ -157,12 +158,17 @@ struct AIItemScanView: View {
                 .padding(.vertical, Spacing.medium)
                 .background(.ultraThinMaterial)
             }
-            .photosPicker(isPresented: $showImagePicker, selection: Binding(
-                get: { nil },
-                set: { newValue in
-                    Task {
-                        if let data = try? await newValue?.loadTransferable(type: Data.self),
-                           let image = UIImage(data: data) {
+            .photosPicker(
+                isPresented: $showImagePicker,
+                selection: $selectedPhotoItem,
+                matching: .images
+            )
+            .onChange(of: selectedPhotoItem) { _, newValue in
+                Task {
+                    if let newValue = newValue,
+                       let data = try? await newValue.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data) {
+                        await MainActor.run {
                             selectedImage = image
                             analysis = nil
                             errorMessage = nil
@@ -171,7 +177,7 @@ struct AIItemScanView: View {
                         }
                     }
                 }
-            ))
+            }
             .alert("Possible Duplicate", isPresented: $showDuplicateWarning) {
                 Button("Add Anyway", role: .none) {
                     duplicateCheckResult = nil
@@ -248,12 +254,10 @@ struct AIItemScanView: View {
         }
     }
     
-    // ✅ FIXED: Duplicate Detection
     private func checkForDuplicates(result: OpenAIService.ItemAnalysis) async {
         isCheckingDuplicates = true
         
         do {
-            // ✅ FIX: Safely unwrap optional items array
             let existingItems = collection.items ?? []
             
             let duplicateResult = try await CollectionInsightsService.shared.checkForDuplicates(
@@ -282,19 +286,62 @@ struct AIItemScanView: View {
         }
     }
     
-    // ✅ FIXED: Create Item
+    // ✅ UPDATED: Create Item with Validation
     private func createItem() {
         guard let image = selectedImage,
               let analysis else { return }
         
-        // Create the item with required parameters only
+        // ✅ NEW: Validate inputs FIRST
+        do {
+            try ValidationService.validateItemName(analysis.name)
+            
+            // ✅ FIXED: Validate notes if present
+            let notes = analysis.description
+            if !notes.isEmpty {
+                guard notes.count <= 500 else {
+                    errorMessage = "Item description is too long (max 500 characters)"
+                    HapticManager.shared.error()
+                    return
+                }
+            }
+            
+            // Validate price
+            let valueString = analysis.estimatedValue.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+            if let value = Double(valueString), value > 0 {
+                try ValidationService.validatePrice(Decimal(value))
+            }
+            
+        } catch let error as ValidationError {
+            errorMessage = error.localizedDescription
+            HapticManager.shared.error()
+            return
+        } catch {
+            errorMessage = "Validation failed: \(error.localizedDescription)"
+            HapticManager.shared.error()
+            return
+        }
+        
+        // ✅ FIXED: Sanitize inputs properly
+        let sanitizedName = ValidationService.sanitizeInput(analysis.name)
+        let sanitizedNotes: String? = {
+            let desc = analysis.description
+            if !desc.isEmpty {
+                return ValidationService.sanitizeInput(desc)
+            }
+            return nil
+        }()
+        let sanitizedTags = generatedTags.map { tag in
+            ValidationService.sanitizeInput(tag)
+        }
+        
+        // Create the item with sanitized values
         let item = CollectionItem(
-            name: analysis.name,
+            name: sanitizedName,
             collection: collection
         )
         
-        // Set optional properties
-        item.notes = analysis.description
+        // Set optional properties with sanitized values
+        item.notes = sanitizedNotes
         
         // Parse estimated value
         let valueString = analysis.estimatedValue.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
@@ -320,11 +367,10 @@ struct AIItemScanView: View {
             }
         }
         
-        // Set generated tags
-        item.tags = generatedTags
+        // Set sanitized tags
+        item.tags = sanitizedTags
         
-        // ✅ FIX: Insert into modelContext instead of appending
-        // SwiftData automatically establishes the relationship
+        // Insert into modelContext
         modelContext.insert(item)
         
         // Upload image to Firebase Storage
@@ -345,8 +391,8 @@ struct AIItemScanView: View {
                 }
             } catch {
                 await MainActor.run {
-                    HapticManager.shared.error()
                     errorMessage = "Failed to upload image: \(error.localizedDescription)"
+                    HapticManager.shared.error()
                 }
             }
         }
