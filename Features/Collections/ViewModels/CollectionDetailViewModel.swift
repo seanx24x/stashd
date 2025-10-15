@@ -65,7 +65,30 @@ final class CollectionDetailViewModel {
 
     func postComment(for collection: CollectionModel) async {
         guard let modelContext, let currentUser else { return }
-        guard !commentText.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        
+        // ✅ NEW: Trim whitespace first
+        let trimmedComment = commentText.trimmingCharacters(in: .whitespaces)
+        guard !trimmedComment.isEmpty else { return }
+        
+        // ✅ NEW: Validate comment
+        do {
+            try ValidationService.validateComment(trimmedComment)
+        } catch let error as ValidationError {
+            await MainActor.run {
+                errorMessage = error.localizedDescription
+                HapticManager.shared.error()
+            }
+            return
+        } catch {
+            await MainActor.run {
+                errorMessage = "Validation failed"
+                HapticManager.shared.error()
+            }
+            return
+        }
+        
+        // ✅ NEW: Sanitize comment
+        let sanitizedComment = ValidationService.sanitizeInput(trimmedComment)
         
         isSubmittingComment = true
         errorMessage = nil
@@ -73,8 +96,9 @@ final class CollectionDetailViewModel {
         do {
             try await Task.sleep(for: .milliseconds(300))
             
+            // Create comment with sanitized content
             let comment = Comment(
-                content: commentText.trimmingCharacters(in: .whitespaces),
+                content: sanitizedComment,
                 author: currentUser,
                 collection: collection
             )
@@ -103,9 +127,11 @@ final class CollectionDetailViewModel {
             
             commentText = ""
             isSubmittingComment = false
+            HapticManager.shared.success()
         } catch {
             errorMessage = "Failed to post comment"
             isSubmittingComment = false
+            HapticManager.shared.error()
         }
     }
     
