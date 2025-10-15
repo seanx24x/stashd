@@ -20,6 +20,18 @@ final class OpenAIService {
     // ✅ Rate limiter (10 calls per minute)
     private let rateLimiter = RateLimiter(maxCallsPerMinute: 10)
     
+    // ✅ NEW: SSL Pinning delegate and secure session
+    private let sslPinningDelegate = SSLPinningDelegate()
+    private lazy var secureSession: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 30
+        return URLSession(
+            configuration: configuration,
+            delegate: sslPinningDelegate,
+            delegateQueue: nil
+        )
+    }()
+    
     private init() {}
     
     struct ItemAnalysis: Codable {
@@ -36,7 +48,6 @@ final class OpenAIService {
         do {
             try await rateLimiter.checkRateLimit()
         } catch {
-            // ✅ NEW: Log rate limit errors
             ErrorLoggingService.shared.logError(
                 error,
                 context: "OpenAI rate limit check"
@@ -47,7 +58,6 @@ final class OpenAIService {
         // Convert image to base64
         guard let imageData = image.jpegData(compressionQuality: 0.8) else {
             let error = OpenAIError.invalidImage
-            // ✅ NEW: Log image conversion errors
             ErrorLoggingService.shared.logError(
                 error,
                 context: "AI Item Analysis - Image conversion"
@@ -97,7 +107,6 @@ final class OpenAIService {
         
         guard let url = URL(string: endpoint) else {
             let error = OpenAIError.invalidURL
-            // ✅ NEW: Log URL errors
             ErrorLoggingService.shared.logError(
                 error,
                 context: "OpenAI endpoint configuration"
@@ -111,13 +120,12 @@ final class OpenAIService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         
-        // Make request
+        // ✅ NEW: Use secure session with SSL pinning
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await secureSession.data(for: request)
             
             guard let httpResponse = response as? HTTPURLResponse else {
                 let error = OpenAIError.invalidResponse
-                // ✅ NEW: Log response errors
                 ErrorLoggingService.shared.logNetworkError(
                     error,
                     endpoint: "OpenAI /chat/completions (analyze item)"
@@ -130,7 +138,6 @@ final class OpenAIService {
                     print("OpenAI Error: \(errorString)")
                 }
                 let error = OpenAIError.apiError(statusCode: httpResponse.statusCode)
-                // ✅ NEW: Log API errors with status code
                 ErrorLoggingService.shared.logNetworkError(
                     error,
                     endpoint: "OpenAI /chat/completions (analyze item)",
@@ -144,7 +151,6 @@ final class OpenAIService {
             
             guard let content = openAIResponse.choices.first?.message.content else {
                 let error = OpenAIError.noContent
-                // ✅ NEW: Log parsing errors
                 ErrorLoggingService.shared.logError(
                     error,
                     context: "OpenAI response parsing - no content"
@@ -156,7 +162,6 @@ final class OpenAIService {
             let jsonString = extractJSON(from: content)
             guard let jsonData = jsonString.data(using: .utf8) else {
                 let error = OpenAIError.invalidJSON
-                // ✅ NEW: Log JSON extraction errors
                 ErrorLoggingService.shared.logError(
                     error,
                     context: "OpenAI JSON extraction"
@@ -166,7 +171,6 @@ final class OpenAIService {
             
             let analysis = try JSONDecoder().decode(ItemAnalysis.self, from: jsonData)
             
-            // ✅ NEW: Log successful analysis
             ErrorLoggingService.shared.logInfo(
                 "Successfully analyzed item",
                 context: "OpenAI"
@@ -174,14 +178,12 @@ final class OpenAIService {
             
             return analysis
         } catch let decodingError as DecodingError {
-            // ✅ NEW: Log decoding errors specifically
             ErrorLoggingService.shared.logError(
                 decodingError,
                 context: "OpenAI response decoding"
             )
             throw OpenAIError.invalidJSON
         } catch {
-            // ✅ NEW: Log any other network errors
             ErrorLoggingService.shared.logNetworkError(
                 error,
                 endpoint: "OpenAI /chat/completions (analyze item)"
@@ -204,7 +206,6 @@ final class OpenAIService {
         do {
             try await rateLimiter.checkRateLimit()
         } catch {
-            // ✅ NEW: Log rate limit errors
             ErrorLoggingService.shared.logError(
                 error,
                 context: "OpenAI rate limit check"
@@ -216,7 +217,6 @@ final class OpenAIService {
         
         guard !apiKey.isEmpty else {
             let error = OpenAIError.invalidAPIKey
-            // ✅ NEW: Log API key errors
             ErrorLoggingService.shared.logError(
                 error,
                 context: "OpenAI API key validation"
@@ -285,14 +285,13 @@ final class OpenAIService {
         
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         
-        // Make the API call
+        // ✅ NEW: Use secure session with SSL pinning
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await secureSession.data(for: request)
             
             guard let httpResponse = response as? HTTPURLResponse,
                   httpResponse.statusCode == 200 else {
                 let statusCode = (response as? HTTPURLResponse)?.statusCode
-                // ✅ NEW: Log API errors
                 ErrorLoggingService.shared.logNetworkError(
                     OpenAIError.requestFailed,
                     endpoint: "OpenAI /chat/completions (generate description)",
@@ -308,7 +307,6 @@ final class OpenAIService {
                let message = firstChoice["message"] as? [String: Any],
                let description = message["content"] as? String {
                 
-                // ✅ NEW: Log successful generation
                 ErrorLoggingService.shared.logInfo(
                     "Successfully generated collection description",
                     context: "OpenAI"
@@ -317,14 +315,12 @@ final class OpenAIService {
                 return description.trimmingCharacters(in: .whitespacesAndNewlines)
             }
             
-            // ✅ NEW: Log parsing errors
             ErrorLoggingService.shared.logError(
                 OpenAIError.invalidResponse,
                 context: "OpenAI description generation - invalid response format"
             )
             throw OpenAIError.invalidResponse
         } catch {
-            // ✅ NEW: Log network errors
             ErrorLoggingService.shared.logNetworkError(
                 error,
                 endpoint: "OpenAI /chat/completions (generate description)"
@@ -344,7 +340,6 @@ final class OpenAIService {
         do {
             try await rateLimiter.checkRateLimit()
         } catch {
-            // ✅ NEW: Log rate limit errors
             ErrorLoggingService.shared.logError(
                 error,
                 context: "OpenAI rate limit check"
@@ -356,7 +351,6 @@ final class OpenAIService {
         
         guard !apiKey.isEmpty else {
             let error = OpenAIError.invalidAPIKey
-            // ✅ NEW: Log API key errors
             ErrorLoggingService.shared.logError(
                 error,
                 context: "OpenAI API key validation"
@@ -418,14 +412,13 @@ final class OpenAIService {
         
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         
-        // Make the API call
+        // ✅ NEW: Use secure session with SSL pinning
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await secureSession.data(for: request)
             
             guard let httpResponse = response as? HTTPURLResponse,
                   httpResponse.statusCode == 200 else {
                 let statusCode = (response as? HTTPURLResponse)?.statusCode
-                // ✅ NEW: Log API errors
                 ErrorLoggingService.shared.logNetworkError(
                     OpenAIError.requestFailed,
                     endpoint: "OpenAI /chat/completions (generate tags)",
@@ -448,7 +441,6 @@ final class OpenAIService {
                     .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                     .filter { !$0.isEmpty }
                 
-                // ✅ NEW: Log successful tag generation
                 ErrorLoggingService.shared.logInfo(
                     "Successfully generated \(tags.count) tags",
                     context: "OpenAI"
@@ -457,14 +449,12 @@ final class OpenAIService {
                 return tags
             }
             
-            // ✅ NEW: Log parsing errors
             ErrorLoggingService.shared.logError(
                 OpenAIError.invalidResponse,
                 context: "OpenAI tag generation - invalid response format"
             )
             throw OpenAIError.invalidResponse
         } catch {
-            // ✅ NEW: Log network errors
             ErrorLoggingService.shared.logNetworkError(
                 error,
                 endpoint: "OpenAI /chat/completions (generate tags)"
