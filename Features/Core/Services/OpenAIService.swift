@@ -17,7 +17,7 @@ final class OpenAIService {
     let apiKey = AppConfig.openAIAPIKey
     private let endpoint = "https://api.openai.com/v1/chat/completions"
     
-    // ✅ NEW: Add rate limiter (10 calls per minute)
+    // ✅ Rate limiter (10 calls per minute)
     private let rateLimiter = RateLimiter(maxCallsPerMinute: 10)
     
     private init() {}
@@ -32,12 +32,27 @@ final class OpenAIService {
     }
     
     func analyzeItem(image: UIImage) async throws -> ItemAnalysis {
-        // ✅ NEW: Check rate limit FIRST
-        try await rateLimiter.checkRateLimit()
+        // ✅ Check rate limit FIRST
+        do {
+            try await rateLimiter.checkRateLimit()
+        } catch {
+            // ✅ NEW: Log rate limit errors
+            ErrorLoggingService.shared.logError(
+                error,
+                context: "OpenAI rate limit check"
+            )
+            throw error
+        }
         
         // Convert image to base64
         guard let imageData = image.jpegData(compressionQuality: 0.8) else {
-            throw OpenAIError.invalidImage
+            let error = OpenAIError.invalidImage
+            // ✅ NEW: Log image conversion errors
+            ErrorLoggingService.shared.logError(
+                error,
+                context: "AI Item Analysis - Image conversion"
+            )
+            throw error
         }
         let base64Image = imageData.base64EncodedString()
         
@@ -81,7 +96,13 @@ final class OpenAIService {
         ]
         
         guard let url = URL(string: endpoint) else {
-            throw OpenAIError.invalidURL
+            let error = OpenAIError.invalidURL
+            // ✅ NEW: Log URL errors
+            ErrorLoggingService.shared.logError(
+                error,
+                context: "OpenAI endpoint configuration"
+            )
+            throw error
         }
         
         var request = URLRequest(url: url)
@@ -91,34 +112,82 @@ final class OpenAIService {
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         
         // Make request
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw OpenAIError.invalidResponse
-        }
-        
-        guard httpResponse.statusCode == 200 else {
-            if let errorString = String(data: data, encoding: .utf8) {
-                print("OpenAI Error: \(errorString)")
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                let error = OpenAIError.invalidResponse
+                // ✅ NEW: Log response errors
+                ErrorLoggingService.shared.logNetworkError(
+                    error,
+                    endpoint: "OpenAI /chat/completions (analyze item)"
+                )
+                throw error
             }
-            throw OpenAIError.apiError(statusCode: httpResponse.statusCode)
-        }
-        
-        // Parse response
-        let openAIResponse = try JSONDecoder().decode(OpenAIResponse.self, from: data)
-        
-        guard let content = openAIResponse.choices.first?.message.content else {
-            throw OpenAIError.noContent
-        }
-        
-        // Extract JSON from response
-        let jsonString = extractJSON(from: content)
-        guard let jsonData = jsonString.data(using: .utf8) else {
+            
+            guard httpResponse.statusCode == 200 else {
+                if let errorString = String(data: data, encoding: .utf8) {
+                    print("OpenAI Error: \(errorString)")
+                }
+                let error = OpenAIError.apiError(statusCode: httpResponse.statusCode)
+                // ✅ NEW: Log API errors with status code
+                ErrorLoggingService.shared.logNetworkError(
+                    error,
+                    endpoint: "OpenAI /chat/completions (analyze item)",
+                    statusCode: httpResponse.statusCode
+                )
+                throw error
+            }
+            
+            // Parse response
+            let openAIResponse = try JSONDecoder().decode(OpenAIResponse.self, from: data)
+            
+            guard let content = openAIResponse.choices.first?.message.content else {
+                let error = OpenAIError.noContent
+                // ✅ NEW: Log parsing errors
+                ErrorLoggingService.shared.logError(
+                    error,
+                    context: "OpenAI response parsing - no content"
+                )
+                throw error
+            }
+            
+            // Extract JSON from response
+            let jsonString = extractJSON(from: content)
+            guard let jsonData = jsonString.data(using: .utf8) else {
+                let error = OpenAIError.invalidJSON
+                // ✅ NEW: Log JSON extraction errors
+                ErrorLoggingService.shared.logError(
+                    error,
+                    context: "OpenAI JSON extraction"
+                )
+                throw error
+            }
+            
+            let analysis = try JSONDecoder().decode(ItemAnalysis.self, from: jsonData)
+            
+            // ✅ NEW: Log successful analysis
+            ErrorLoggingService.shared.logInfo(
+                "Successfully analyzed item",
+                context: "OpenAI"
+            )
+            
+            return analysis
+        } catch let decodingError as DecodingError {
+            // ✅ NEW: Log decoding errors specifically
+            ErrorLoggingService.shared.logError(
+                decodingError,
+                context: "OpenAI response decoding"
+            )
             throw OpenAIError.invalidJSON
+        } catch {
+            // ✅ NEW: Log any other network errors
+            ErrorLoggingService.shared.logNetworkError(
+                error,
+                endpoint: "OpenAI /chat/completions (analyze item)"
+            )
+            throw error
         }
-        
-        let analysis = try JSONDecoder().decode(ItemAnalysis.self, from: jsonData)
-        return analysis
     }
     
     // MARK: - Collection Description Generation
@@ -131,13 +200,28 @@ final class OpenAIService {
         totalValue: Decimal,
         dateRange: String?
     ) async throws -> String {
-        // ✅ NEW: Check rate limit FIRST
-        try await rateLimiter.checkRateLimit()
+        // ✅ Check rate limit FIRST
+        do {
+            try await rateLimiter.checkRateLimit()
+        } catch {
+            // ✅ NEW: Log rate limit errors
+            ErrorLoggingService.shared.logError(
+                error,
+                context: "OpenAI rate limit check"
+            )
+            throw error
+        }
         
         let apiKey = self.apiKey
         
         guard !apiKey.isEmpty else {
-            throw OpenAIError.invalidAPIKey
+            let error = OpenAIError.invalidAPIKey
+            // ✅ NEW: Log API key errors
+            ErrorLoggingService.shared.logError(
+                error,
+                context: "OpenAI API key validation"
+            )
+            throw error
         }
         
         // Build the prompt
@@ -202,23 +286,51 @@ final class OpenAIService {
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         
         // Make the API call
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200 else {
-            throw OpenAIError.requestFailed
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                let statusCode = (response as? HTTPURLResponse)?.statusCode
+                // ✅ NEW: Log API errors
+                ErrorLoggingService.shared.logNetworkError(
+                    OpenAIError.requestFailed,
+                    endpoint: "OpenAI /chat/completions (generate description)",
+                    statusCode: statusCode
+                )
+                throw OpenAIError.requestFailed
+            }
+            
+            // Parse the response
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let choices = json["choices"] as? [[String: Any]],
+               let firstChoice = choices.first,
+               let message = firstChoice["message"] as? [String: Any],
+               let description = message["content"] as? String {
+                
+                // ✅ NEW: Log successful generation
+                ErrorLoggingService.shared.logInfo(
+                    "Successfully generated collection description",
+                    context: "OpenAI"
+                )
+                
+                return description.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            
+            // ✅ NEW: Log parsing errors
+            ErrorLoggingService.shared.logError(
+                OpenAIError.invalidResponse,
+                context: "OpenAI description generation - invalid response format"
+            )
+            throw OpenAIError.invalidResponse
+        } catch {
+            // ✅ NEW: Log network errors
+            ErrorLoggingService.shared.logNetworkError(
+                error,
+                endpoint: "OpenAI /chat/completions (generate description)"
+            )
+            throw error
         }
-        
-        // Parse the response
-        if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let choices = json["choices"] as? [[String: Any]],
-           let firstChoice = choices.first,
-           let message = firstChoice["message"] as? [String: Any],
-           let description = message["content"] as? String {
-            return description.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        
-        throw OpenAIError.invalidResponse
     }
     
     // MARK: - Smart Tag Generation
@@ -228,13 +340,28 @@ final class OpenAIService {
         category: String,
         description: String?
     ) async throws -> [String] {
-        // ✅ NEW: Check rate limit FIRST
-        try await rateLimiter.checkRateLimit()
+        // ✅ Check rate limit FIRST
+        do {
+            try await rateLimiter.checkRateLimit()
+        } catch {
+            // ✅ NEW: Log rate limit errors
+            ErrorLoggingService.shared.logError(
+                error,
+                context: "OpenAI rate limit check"
+            )
+            throw error
+        }
         
         let apiKey = self.apiKey
         
         guard !apiKey.isEmpty else {
-            throw OpenAIError.invalidAPIKey
+            let error = OpenAIError.invalidAPIKey
+            // ✅ NEW: Log API key errors
+            ErrorLoggingService.shared.logError(
+                error,
+                context: "OpenAI API key validation"
+            )
+            throw error
         }
         
         // Build the prompt
@@ -292,34 +419,61 @@ final class OpenAIService {
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         
         // Make the API call
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200 else {
-            throw OpenAIError.requestFailed
-        }
-        
-        // Parse the response
-        if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let choices = json["choices"] as? [[String: Any]],
-           let firstChoice = choices.first,
-           let message = firstChoice["message"] as? [String: Any],
-           let tagsString = message["content"] as? String {
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
             
-            // Parse comma-separated tags
-            let tags = tagsString
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .components(separatedBy: ",")
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                let statusCode = (response as? HTTPURLResponse)?.statusCode
+                // ✅ NEW: Log API errors
+                ErrorLoggingService.shared.logNetworkError(
+                    OpenAIError.requestFailed,
+                    endpoint: "OpenAI /chat/completions (generate tags)",
+                    statusCode: statusCode
+                )
+                throw OpenAIError.requestFailed
+            }
             
-            return tags
+            // Parse the response
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let choices = json["choices"] as? [[String: Any]],
+               let firstChoice = choices.first,
+               let message = firstChoice["message"] as? [String: Any],
+               let tagsString = message["content"] as? String {
+                
+                // Parse comma-separated tags
+                let tags = tagsString
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .components(separatedBy: ",")
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                
+                // ✅ NEW: Log successful tag generation
+                ErrorLoggingService.shared.logInfo(
+                    "Successfully generated \(tags.count) tags",
+                    context: "OpenAI"
+                )
+                
+                return tags
+            }
+            
+            // ✅ NEW: Log parsing errors
+            ErrorLoggingService.shared.logError(
+                OpenAIError.invalidResponse,
+                context: "OpenAI tag generation - invalid response format"
+            )
+            throw OpenAIError.invalidResponse
+        } catch {
+            // ✅ NEW: Log network errors
+            ErrorLoggingService.shared.logNetworkError(
+                error,
+                endpoint: "OpenAI /chat/completions (generate tags)"
+            )
+            throw error
         }
-        
-        throw OpenAIError.invalidResponse
     }
     
-    // ✅ NEW: Helper to check remaining API calls
+    // ✅ Helper to check remaining API calls
     func getRemainingCalls() async -> Int {
         await rateLimiter.getRemainingCalls()
     }

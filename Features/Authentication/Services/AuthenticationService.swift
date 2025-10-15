@@ -83,32 +83,63 @@ final class AuthenticationService: NSObject {
         
         authState = .authenticating
         
-        // ✅ NEW: Validate inputs BEFORE any network calls
+        // ✅ Validate inputs BEFORE any network calls
         do {
             try ValidationService.validateUsername(username)
             try ValidationService.validateDisplayName(displayName)
             try ValidationService.validateBio(bio)
+        } catch let error as ValidationError {
+            // ✅ NEW: Log validation errors
+            ErrorLoggingService.shared.logValidationError(
+                error,
+                field: "onboarding",
+                value: username
+            )
+            authState = .onboardingRequired(userID: userID, email: nil)
+            throw error
         } catch {
+            ErrorLoggingService.shared.logError(
+                error,
+                context: "Onboarding validation"
+            )
             authState = .onboardingRequired(userID: userID, email: nil)
             throw error
         }
         
-        // ✅ NEW: Sanitize inputs
+        // ✅ Sanitize inputs
         let sanitizedUsername = ValidationService.sanitizeInput(username)
         let sanitizedDisplayName = ValidationService.sanitizeInput(displayName)
         let sanitizedBio = bio.map { ValidationService.sanitizeInput($0) }
         
         // Check username availability in Firestore
-        let isAvailable = try await FirestoreService.shared.checkUsernameAvailable(sanitizedUsername)
-        guard isAvailable else {
-            authState = .onboardingRequired(userID: userID, email: nil)
-            throw AuthError.usernameTaken
+        do {
+            let isAvailable = try await FirestoreService.shared.checkUsernameAvailable(sanitizedUsername)
+            guard isAvailable else {
+                authState = .onboardingRequired(userID: userID, email: nil)
+                throw AuthError.usernameTaken
+            }
+        } catch {
+            // ✅ NEW: Log Firebase errors
+            ErrorLoggingService.shared.logFirebaseError(
+                error,
+                operation: "Check username availability"
+            )
+            throw error
         }
         
         // Upload avatar if provided
         var avatarURL: URL?
         if let avatar {
-            avatarURL = try await StorageService.shared.uploadAvatar(avatar, userID: userID)
+            do {
+                avatarURL = try await StorageService.shared.uploadAvatar(avatar, userID: userID)
+            } catch {
+                // ✅ NEW: Log storage errors
+                ErrorLoggingService.shared.logFirebaseError(
+                    error,
+                    operation: "Upload avatar"
+                )
+                // Don't throw - avatar is optional
+            }
         }
         
         // Create profile with sanitized values
@@ -125,33 +156,72 @@ final class AuthenticationService: NSObject {
         try modelContext.save()
         
         // Save to Firestore
-        try await FirestoreService.shared.saveUserProfile(profile)
+        do {
+            try await FirestoreService.shared.saveUserProfile(profile)
+        } catch {
+            // ✅ NEW: Log Firestore save errors
+            ErrorLoggingService.shared.logFirebaseError(
+                error,
+                operation: "Save user profile"
+            )
+            throw error
+        }
 
         // Sync any existing local data to Firestore
-        try await DataSyncService.shared.syncLocalChanges(modelContext: modelContext)
+        do {
+            try await DataSyncService.shared.syncLocalChanges(modelContext: modelContext)
+        } catch {
+            // ✅ NEW: Log sync errors (non-fatal)
+            ErrorLoggingService.shared.logError(
+                error,
+                context: "Initial data sync"
+            )
+            // Don't throw - sync can happen later
+        }
 
         currentUser = profile
         authState = .authenticated(profile)
+        
+        // ✅ NEW: Log successful onboarding
+        ErrorLoggingService.shared.logInfo(
+            "User completed onboarding",
+            context: "Authentication"
+        )
     }
     
     func signOut() throws {
         guard let modelContext else { return }
         
-        // Sign out from Firebase
-        try FirebaseService.shared.auth.signOut()
-        
-        // Clear local data
-        let descriptor = FetchDescriptor<UserProfile>()
-        if let profiles = try? modelContext.fetch(descriptor) {
-            profiles.forEach { profile in
-                modelContext.delete(profile)
+        do {
+            // Sign out from Firebase
+            try FirebaseService.shared.auth.signOut()
+            
+            // Clear local data
+            let descriptor = FetchDescriptor<UserProfile>()
+            if let profiles = try? modelContext.fetch(descriptor) {
+                profiles.forEach { profile in
+                    modelContext.delete(profile)
+                }
+                try? modelContext.save()
             }
-            try? modelContext.save()
+            
+            authState = .unauthenticated
+            currentUser = nil
+            errorMessage = nil
+            
+            // ✅ NEW: Log successful sign out
+            ErrorLoggingService.shared.logInfo(
+                "User signed out",
+                context: "Authentication"
+            )
+        } catch {
+            // ✅ NEW: Log sign out errors
+            ErrorLoggingService.shared.logAuthError(
+                error,
+                action: "Sign out"
+            )
+            throw error
         }
-        
-        authState = .unauthenticated
-        currentUser = nil
-        errorMessage = nil
     }
     
     // MARK: - Helper Methods
@@ -190,6 +260,11 @@ extension AuthenticationService: ASAuthorizationControllerDelegate {
               let appleIDToken = appleIDCredential.identityToken,
               let idTokenString = String(data: appleIDToken, encoding: .utf8) else {
             Task { @MainActor in
+                // ✅ NEW: Log credential errors
+                ErrorLoggingService.shared.logAuthError(
+                    NSError(domain: "AuthenticationService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unable to fetch identity token"]),
+                    action: "Sign in with Apple - Credential extraction"
+                )
                 self.errorMessage = "Unable to fetch identity token"
                 self.authState = .unauthenticated
             }
@@ -211,8 +286,6 @@ extension AuthenticationService: ASAuthorizationControllerDelegate {
                 // Check if user profile exists in Firestore
                 if let firestoreData = try await FirestoreService.shared.fetchUserProfile(firebaseUID: firebaseUser.uid) {
                     // User exists - fetch their profile
-                    // For now, we'll need to complete onboarding
-                    // (In a real app, you'd reconstruct the UserProfile from Firestore)
                     self.authState = .onboardingRequired(
                         userID: firebaseUser.uid,
                         email: firebaseUser.email
@@ -224,7 +297,18 @@ extension AuthenticationService: ASAuthorizationControllerDelegate {
                         email: firebaseUser.email ?? appleIDCredential.email
                     )
                 }
+                
+                // ✅ NEW: Log successful sign in
+                ErrorLoggingService.shared.logInfo(
+                    "User signed in with Apple",
+                    context: "Authentication"
+                )
             } catch {
+                // ✅ NEW: Log sign in errors
+                ErrorLoggingService.shared.logAuthError(
+                    error,
+                    action: "Sign in with Apple - Firebase"
+                )
                 self.errorMessage = "Sign in failed: \(error.localizedDescription)"
                 self.authState = .unauthenticated
             }
@@ -233,6 +317,11 @@ extension AuthenticationService: ASAuthorizationControllerDelegate {
     
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
         Task { @MainActor in
+            // ✅ NEW: Log authorization errors
+            ErrorLoggingService.shared.logAuthError(
+                error,
+                action: "Sign in with Apple - Authorization"
+            )
             self.errorMessage = "Sign in failed: \(error.localizedDescription)"
             self.authState = .unauthenticated
         }
