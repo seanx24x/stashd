@@ -16,6 +16,10 @@ struct StashdApp: App {
     @State private var coordinator = AppCoordinator()
     @State private var authService = AuthenticationService()
     
+    // ✅ NEW: Security state
+    @State private var showSecurityWarning = false
+    @State private var securityCheckResult: SecurityCheckResult?
+    
     let modelContainer: ModelContainer
     
     init() {
@@ -29,6 +33,13 @@ struct StashdApp: App {
         
         // Initialize FirebaseService to set up references
         _ = FirebaseService.shared
+        
+        // ✅ NEW: Perform security checks
+        let result = SecurityService.shared.performSecurityChecks()
+        if !result.isSecure {
+            _showSecurityWarning = State(initialValue: true)
+            _securityCheckResult = State(initialValue: result)
+        }
         
         do {
             let schema = Schema([
@@ -74,6 +85,23 @@ struct StashdApp: App {
                     }
                 }
                 .preferredColorScheme(nil)
+                // ✅ NEW: Security warning alert
+                .alert("Security Warning", isPresented: $showSecurityWarning) {
+                    Button("I Understand", role: .cancel) {
+                        // User acknowledges the warning
+                        // Optionally, you could restrict certain features here
+                    }
+                    Button("Exit App", role: .destructive) {
+                        exit(0)
+                    }
+                } message: {
+                    if let result = securityCheckResult,
+                       let message = result.warningMessage {
+                        Text(message)
+                    } else {
+                        Text("A security issue was detected. Some features may be restricted.")
+                    }
+                }
         }
     }
 }
@@ -87,6 +115,14 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     ) -> Bool {
         // Firebase is configured in StashdApp init
         print("🔥 Firebase configured")
+        
+        // ✅ NEW: Log security check on app launch
+        let securityResult = SecurityService.shared.performSecurityChecks()
+        if !securityResult.isSecure {
+            print("⚠️ Security warning: Device may be compromised")
+        } else {
+            print("✅ Security check passed")
+        }
         
         return true
     }
