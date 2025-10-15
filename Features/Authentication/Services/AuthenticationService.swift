@@ -89,7 +89,6 @@ final class AuthenticationService: NSObject {
             try ValidationService.validateDisplayName(displayName)
             try ValidationService.validateBio(bio)
         } catch let error as ValidationError {
-            // ✅ NEW: Log validation errors
             ErrorLoggingService.shared.logValidationError(
                 error,
                 field: "onboarding",
@@ -119,7 +118,6 @@ final class AuthenticationService: NSObject {
                 throw AuthError.usernameTaken
             }
         } catch {
-            // ✅ NEW: Log Firebase errors
             ErrorLoggingService.shared.logFirebaseError(
                 error,
                 operation: "Check username availability"
@@ -133,7 +131,6 @@ final class AuthenticationService: NSObject {
             do {
                 avatarURL = try await StorageService.shared.uploadAvatar(avatar, userID: userID)
             } catch {
-                // ✅ NEW: Log storage errors
                 ErrorLoggingService.shared.logFirebaseError(
                     error,
                     operation: "Upload avatar"
@@ -159,7 +156,6 @@ final class AuthenticationService: NSObject {
         do {
             try await FirestoreService.shared.saveUserProfile(profile)
         } catch {
-            // ✅ NEW: Log Firestore save errors
             ErrorLoggingService.shared.logFirebaseError(
                 error,
                 operation: "Save user profile"
@@ -171,7 +167,6 @@ final class AuthenticationService: NSObject {
         do {
             try await DataSyncService.shared.syncLocalChanges(modelContext: modelContext)
         } catch {
-            // ✅ NEW: Log sync errors (non-fatal)
             ErrorLoggingService.shared.logError(
                 error,
                 context: "Initial data sync"
@@ -182,7 +177,9 @@ final class AuthenticationService: NSObject {
         currentUser = profile
         authState = .authenticated(profile)
         
-        // ✅ NEW: Log successful onboarding
+        // ✅ NEW: Save session to Keychain
+        saveUserSession(userID: userID)
+        
         ErrorLoggingService.shared.logInfo(
             "User completed onboarding",
             context: "Authentication"
@@ -209,18 +206,80 @@ final class AuthenticationService: NSObject {
             currentUser = nil
             errorMessage = nil
             
-            // ✅ NEW: Log successful sign out
+            // ✅ NEW: Clear session from Keychain
+            clearUserSession()
+            
             ErrorLoggingService.shared.logInfo(
                 "User signed out",
                 context: "Authentication"
             )
         } catch {
-            // ✅ NEW: Log sign out errors
             ErrorLoggingService.shared.logAuthError(
                 error,
                 action: "Sign out"
             )
             throw error
+        }
+    }
+    
+    // MARK: - Keychain Integration
+    
+    /// Save user session to Keychain
+    private func saveUserSession(userID: String) {
+        do {
+            try KeychainService.shared.save(userID, for: KeychainService.Key.firebaseUserID)
+            try KeychainService.shared.save(Date().timeIntervalSince1970.description, for: KeychainService.Key.lastAuthDate)
+            
+            ErrorLoggingService.shared.logInfo(
+                "Saved user session to Keychain",
+                context: "Authentication"
+            )
+        } catch {
+            ErrorLoggingService.shared.logError(
+                error,
+                context: "Save user session to Keychain"
+            )
+        }
+    }
+    
+    /// Load user session from Keychain
+    private func loadUserSession() -> String? {
+        do {
+            let userID = try KeychainService.shared.loadString(for: KeychainService.Key.firebaseUserID)
+            
+            ErrorLoggingService.shared.logInfo(
+                "Loaded user session from Keychain",
+                context: "Authentication"
+            )
+            
+            return userID
+        } catch KeychainError.notFound {
+            // No session saved - this is normal for first launch
+            return nil
+        } catch {
+            ErrorLoggingService.shared.logError(
+                error,
+                context: "Load user session from Keychain"
+            )
+            return nil
+        }
+    }
+    
+    /// Clear user session from Keychain
+    private func clearUserSession() {
+        do {
+            try KeychainService.shared.delete(for: KeychainService.Key.firebaseUserID)
+            try KeychainService.shared.delete(for: KeychainService.Key.lastAuthDate)
+            
+            ErrorLoggingService.shared.logInfo(
+                "Cleared user session from Keychain",
+                context: "Authentication"
+            )
+        } catch {
+            ErrorLoggingService.shared.logError(
+                error,
+                context: "Clear user session from Keychain"
+            )
         }
     }
     
@@ -260,7 +319,6 @@ extension AuthenticationService: ASAuthorizationControllerDelegate {
               let appleIDToken = appleIDCredential.identityToken,
               let idTokenString = String(data: appleIDToken, encoding: .utf8) else {
             Task { @MainActor in
-                // ✅ NEW: Log credential errors
                 ErrorLoggingService.shared.logAuthError(
                     NSError(domain: "AuthenticationService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unable to fetch identity token"]),
                     action: "Sign in with Apple - Credential extraction"
@@ -298,13 +356,11 @@ extension AuthenticationService: ASAuthorizationControllerDelegate {
                     )
                 }
                 
-                // ✅ NEW: Log successful sign in
                 ErrorLoggingService.shared.logInfo(
                     "User signed in with Apple",
                     context: "Authentication"
                 )
             } catch {
-                // ✅ NEW: Log sign in errors
                 ErrorLoggingService.shared.logAuthError(
                     error,
                     action: "Sign in with Apple - Firebase"
@@ -317,7 +373,6 @@ extension AuthenticationService: ASAuthorizationControllerDelegate {
     
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
         Task { @MainActor in
-            // ✅ NEW: Log authorization errors
             ErrorLoggingService.shared.logAuthError(
                 error,
                 action: "Sign in with Apple - Authorization"

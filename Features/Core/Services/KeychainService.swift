@@ -1,12 +1,4 @@
 //
-//  KeychainError.swift
-//  stashd
-//
-//  Created by Sean Lynch on 10/14/25.
-//
-
-
-//
 //  KeychainService.swift
 //  stashd
 //
@@ -53,7 +45,7 @@ final class KeychainService {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
         ]
         
         // Delete any existing item first
@@ -63,8 +55,28 @@ final class KeychainService {
         let status = SecItemAdd(query as CFDictionary, nil)
         
         guard status == errSecSuccess else {
+            // ✅ NEW: Log errors
+            ErrorLoggingService.shared.logError(
+                KeychainError.saveFailed(status),
+                context: "Keychain save",
+                additionalInfo: ["key": key, "status": "\(status)"]
+            )
             throw KeychainError.saveFailed(status)
         }
+        
+        // ✅ NEW: Log success
+        ErrorLoggingService.shared.logInfo(
+            "Saved value to Keychain",
+            context: "Keychain"
+        )
+    }
+    
+    // ✅ NEW: Convenience method for saving strings
+    func save(_ value: String, for key: String) throws {
+        guard let data = value.data(using: .utf8) else {
+            throw KeychainError.invalidData
+        }
+        try save(data, for: key)
     }
     
     // MARK: - Load Data
@@ -84,6 +96,12 @@ final class KeychainService {
             if status == errSecItemNotFound {
                 throw KeychainError.notFound
             }
+            // ✅ NEW: Log errors
+            ErrorLoggingService.shared.logError(
+                KeychainError.loadFailed(status),
+                context: "Keychain load",
+                additionalInfo: ["key": key, "status": "\(status)"]
+            )
             throw KeychainError.loadFailed(status)
         }
         
@@ -92,6 +110,15 @@ final class KeychainService {
         }
         
         return data
+    }
+    
+    // ✅ NEW: Convenience method for loading strings
+    func loadString(for key: String) throws -> String {
+        let data = try load(for: key)
+        guard let string = String(data: data, encoding: .utf8) else {
+            throw KeychainError.invalidData
+        }
+        return string
     }
     
     // MARK: - Delete Data
@@ -105,8 +132,20 @@ final class KeychainService {
         let status = SecItemDelete(query as CFDictionary)
         
         guard status == errSecSuccess || status == errSecItemNotFound else {
+            // ✅ NEW: Log errors
+            ErrorLoggingService.shared.logError(
+                KeychainError.deleteFailed(status),
+                context: "Keychain delete",
+                additionalInfo: ["key": key, "status": "\(status)"]
+            )
             throw KeychainError.deleteFailed(status)
         }
+        
+        // ✅ NEW: Log success
+        ErrorLoggingService.shared.logInfo(
+            "Deleted value from Keychain",
+            context: "Keychain"
+        )
     }
     
     // MARK: - Check Existence
@@ -132,7 +171,28 @@ final class KeychainService {
         let status = SecItemDelete(query as CFDictionary)
         
         guard status == errSecSuccess || status == errSecItemNotFound else {
+            // ✅ NEW: Log errors
+            ErrorLoggingService.shared.logError(
+                KeychainError.deleteFailed(status),
+                context: "Keychain clear all"
+            )
             throw KeychainError.deleteFailed(status)
         }
+        
+        // ✅ NEW: Log success
+        ErrorLoggingService.shared.logInfo(
+            "Cleared all Keychain values",
+            context: "Keychain"
+        )
+    }
+}
+
+// ✅ NEW: Predefined Keys
+extension KeychainService {
+    enum Key {
+        static let firebaseUserID = "com.stashd.firebaseUserID"
+        static let firebaseIDToken = "com.stashd.firebaseIDToken"
+        static let firebaseRefreshToken = "com.stashd.firebaseRefreshToken"
+        static let lastAuthDate = "com.stashd.lastAuthDate"
     }
 }
