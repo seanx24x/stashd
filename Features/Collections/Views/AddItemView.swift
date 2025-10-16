@@ -24,6 +24,9 @@ struct AddItemView: View {
     @State private var duplicateResult: DuplicateDetectionService.DuplicateResult?
     @State private var showDuplicateWarning = false
     @State private var isCheckingDuplicates = false
+    @State private var suggestedTags: [String] = []
+    @State private var selectedTags: [String] = []
+    @State private var isLoadingTags = false
     
     @FocusState private var focusedField: Field?
     
@@ -87,22 +90,12 @@ struct AddItemView: View {
                 }
             } message: {
                 if let result = duplicateResult {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(result.reason)
-                        Text("\nConfidence: \(Int(result.confidence))%")
-                        
-                        if !result.matchedItems.isEmpty {
-                            Text("\nSimilar items:")
-                            ForEach(result.matchedItems.prefix(3), id: \.id) { item in
-                                Text("• \(item.name)")
-                            }
-                        }
-                    }
+                    Text(result.reason + "\n\nConfidence: \(Int(result.confidence))%")
                 } else {
                     Text("This item may already exist in your collection.")
                 }
             }
-            .overlay {  // ← ADD THIS
+            .overlay {
                 if isLoading || isCheckingDuplicates {
                     loadingOverlay
                 }
@@ -217,9 +210,9 @@ struct AddItemView: View {
         }
     }
 
-    private func removeImage(at index: Int) {
+    private func removeImage(at: Int) {
         _ = withAnimation {
-            selectedImages.remove(at: index)
+            selectedImages.remove(at: at)
         }
     }
     
@@ -255,9 +248,21 @@ struct AddItemView: View {
                 icon: "tag"
             )
             .focused($focusedField, equals: .name)
+            .onChange(of: name) { oldValue, newValue in
+                // Auto-generate tags when name changes
+                if !newValue.isEmpty && newValue.count >= 3 {
+                    Task {
+                        await generateTagSuggestions()
+                    }
+                }
+            }
             
             descriptionField
             conditionPicker
+            
+            // Tag suggestions section
+            tagSuggestionsSection
+            
             priceFields
             dateAcquiredPicker
         }
@@ -328,6 +333,88 @@ struct AddItemView: View {
                 .overlay {
                     RoundedRectangle(cornerRadius: CornerRadius.medium)
                         .strokeBorder(Color.separator, lineWidth: 1)
+                }
+            }
+        }
+    }
+    
+    private var tagSuggestionsSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.medium) {
+            HStack {
+                Text("Tags")
+                    .font(.labelLarge)
+                    .foregroundStyle(Color.textSecondary)
+                
+                if isLoadingTags {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                }
+                
+                Spacer()
+                
+                if !suggestedTags.isEmpty {
+                    Button("Generate More") {
+                        Task {
+                            await generateTagSuggestions()
+                        }
+                    }
+                    .font(.labelSmall)
+                    .foregroundStyle(Color.stashdPrimary)
+                }
+            }
+            
+            // Selected tags
+            if !selectedTags.isEmpty {
+                FlowLayout(spacing: Spacing.small) {
+                    ForEach(selectedTags, id: \.self) { tag in
+                        Button {
+                            removeTag(tag)
+                        } label: {
+                            HStack(spacing: Spacing.xSmall) {
+                                Text(tag)
+                                    .font(.labelMedium)
+                                
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.caption2)
+                            }
+                            .padding(.horizontal, Spacing.medium)
+                            .padding(.vertical, Spacing.small)
+                            .background(Color.stashdPrimary)
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
+                        }
+                    }
+                }
+            }
+
+            // Suggested tags
+            if !suggestedTags.isEmpty {
+                VStack(alignment: .leading, spacing: Spacing.xSmall) {
+                    Text("Suggested")
+                        .font(.labelSmall)
+                        .foregroundStyle(Color.textTertiary)
+                    
+                    FlowLayout(spacing: Spacing.small) {
+                        ForEach(suggestedTags, id: \.self) { tag in
+                            if !selectedTags.contains(tag) {
+                                Button {
+                                    addTag(tag)
+                                } label: {
+                                    Text(tag)
+                                        .font(.labelMedium)
+                                        .padding(.horizontal, Spacing.medium)
+                                        .padding(.vertical, Spacing.small)
+                                        .background(Color.surfaceElevated)
+                                        .foregroundStyle(Color.textPrimary)
+                                        .clipShape(Capsule())
+                                        .overlay {
+                                            Capsule()
+                                                .strokeBorder(Color.separator, lineWidth: 1)
+                                        }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -477,7 +564,8 @@ struct AddItemView: View {
                 notes: itemDescription.isEmpty ? nil : itemDescription,
                 condition: selectedCondition,
                 purchaseDate: purchaseDate,
-                imageURLs: imageURLs
+                imageURLs: imageURLs,
+                tags: selectedTags
             )
             
             // Safely handle optional items array
@@ -499,6 +587,50 @@ struct AddItemView: View {
             isLoading = false
             errorMessage = error.localizedDescription
         }
+    }
+    
+    // MARK: - Tag Management
+    
+    private func generateTagSuggestions() async {
+        guard !name.isEmpty else { return }
+        
+        isLoadingTags = true
+        
+        do {
+            let tags = try await TagSuggestionService.shared.suggestTags(
+                for: name,
+                description: itemDescription.isEmpty ? nil : itemDescription,
+                category: collection.categoryEnum,
+                existingTags: selectedTags
+            )
+            
+            suggestedTags = tags.filter { !selectedTags.contains($0) }
+            isLoadingTags = false
+        } catch {
+            isLoadingTags = false
+            ErrorLoggingService.shared.logError(
+                error,
+                context: "Generate tag suggestions"
+            )
+        }
+    }
+    
+    private func addTag(_ tag: String) {
+        withAnimation(.spring(response: 0.3)) {
+            selectedTags.append(tag)
+            suggestedTags.removeAll { $0 == tag }
+        }
+        HapticManager.shared.light()
+    }
+    
+    private func removeTag(_ tag: String) {
+        withAnimation(.spring(response: 0.3)) {
+            selectedTags.removeAll { $0 == tag }
+            if !suggestedTags.contains(tag) {
+                suggestedTags.append(tag)
+            }
+        }
+        HapticManager.shared.light()
     }
     
     private func saveItemImage(_ image: UIImage, itemID: String, index: Int) async throws -> URL? {
