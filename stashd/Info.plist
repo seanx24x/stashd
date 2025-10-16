@@ -18,8 +18,10 @@
     <string>$(IGDB_CLIENT_ID)</string>
     <key>IGDB_CLIENT_SECRET</key>
     <string>$(IGDB_CLIENT_SECRET)</string>
-    <key>EBAY_API_KEY</key>
-    <string>$(EBAY_API_KEY)</string>
+    <key>EBAY_CLIENT_ID</key>
+    <string>$(EBAY_CLIENT_ID)</string>
+    <key>EBAY_CLIENT_SECRET</key>
+    <string>$(EBAY_CLIENT_SECRET)</string>
     <key>FirebaseAppDelegateProxyEnabled</key>
     <false/>
 </dict>

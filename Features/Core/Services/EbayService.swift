@@ -13,12 +13,84 @@ import Foundation
 final class eBayService {
     static let shared = eBayService()
     
-    private var apiKey: String? { AppConfig.ebayAPIKey }
+    private var clientID: String? { AppConfig.ebayClientID }
+    private var clientSecret: String? { AppConfig.ebayClientSecret }
     
-    // Use production endpoint
-    private let findingEndpoint = "https://svcs.ebay.com/services/search/FindingService/v1"
+    private let baseURL = "https://api.ebay.com"
+    private let authURL = "https://api.ebay.com/identity/v1/oauth2/token"
+    
+    private var accessToken: String?
+    private var tokenExpiry: Date?
     
     private init() {}
+    
+    // MARK: - Authentication
+    
+    private func getAccessToken() async throws -> String {
+        // Return cached token if valid
+        if let token = accessToken,
+           let expiry = tokenExpiry,
+           expiry > Date() {
+            return token
+        }
+        
+        guard let clientID = clientID,
+              let clientSecret = clientSecret else {
+            throw eBayError.noCredentials
+        }
+        
+        // Create OAuth request
+        guard let url = URL(string: authURL) else {
+            throw eBayError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        
+        // Basic Auth header
+        let credentials = "\(clientID):\(clientSecret)"
+        guard let credentialsData = credentials.data(using: .utf8) else {
+            throw eBayError.authFailed
+        }
+        let base64Credentials = credentialsData.base64EncodedString()
+        request.setValue("Basic \(base64Credentials)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        
+        // Request body
+        let body = "grant_type=client_credentials&scope=https://api.ebay.com/oauth/api_scope"
+        request.httpBody = body.data(using: .utf8)
+        
+        ErrorLoggingService.shared.logInfo(
+            "Requesting eBay OAuth token",
+            context: "eBay API"
+        )
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            ErrorLoggingService.shared.logError(
+                eBayError.authFailed,
+                context: "eBay OAuth"
+            )
+            throw eBayError.authFailed
+        }
+        
+        let tokenResponse = try JSONDecoder().decode(EBayTokenResponse.self, from: data)
+        
+        // Cache token (subtract 60 seconds for safety buffer)
+        self.accessToken = tokenResponse.accessToken
+        self.tokenExpiry = Date().addingTimeInterval(TimeInterval(tokenResponse.expiresIn - 60))
+        
+        ErrorLoggingService.shared.logInfo(
+            "eBay OAuth token obtained",
+            context: "eBay API"
+        )
+        
+        return tokenResponse.accessToken
+    }
+    
+    // MARK: - Models
     
     struct PriceInfo: Identifiable {
         let id = UUID()
@@ -64,26 +136,25 @@ final class eBayService {
         }
     }
     
-    func searchItem(query: String, condition: String? = nil) async throws -> [PriceInfo] {
-        guard let apiKey = apiKey else {
-            throw eBayError.noAPIKey
+    // MARK: - Search Items
+    
+    func searchItem(query: String, condition: String? = nil, limit: Int = 20) async throws -> [PriceInfo] {
+        let token = try await getAccessToken()
+        
+        guard !query.isEmpty else {
+            throw eBayError.invalidQuery
         }
         
-        var components = URLComponents(string: findingEndpoint)!
+        // Build search URL with query parameters
+        var components = URLComponents(string: "\(baseURL)/buy/browse/v1/item_summary/search")!
         
         var queryItems = [
-            URLQueryItem(name: "OPERATION-NAME", value: "findCompletedItems"),
-            URLQueryItem(name: "SERVICE-VERSION", value: "1.0.0"),
-            URLQueryItem(name: "SECURITY-APPNAME", value: apiKey),
-            URLQueryItem(name: "RESPONSE-DATA-FORMAT", value: "JSON"),
-            URLQueryItem(name: "keywords", value: query),
-            URLQueryItem(name: "paginationInput.entriesPerPage", value: "20"),
-            URLQueryItem(name: "sortOrder", value: "EndTimeSoonest")
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "limit", value: "\(limit)")
         ]
         
-        if let condition {
-            queryItems.append(URLQueryItem(name: "itemFilter(0).name", value: "Condition"))
-            queryItems.append(URLQueryItem(name: "itemFilter(0).value", value: mapCondition(condition)))
+        if let condition = condition {
+            queryItems.append(URLQueryItem(name: "filter", value: "conditions:{\(mapCondition(condition))}"))
         }
         
         components.queryItems = queryItems
@@ -92,27 +163,37 @@ final class eBayService {
             throw eBayError.invalidURL
         }
         
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
         ErrorLoggingService.shared.logInfo(
             "Searching eBay: \(query)",
             context: "eBay API"
         )
         
-        let (data, response) = try await URLSession.shared.data(from: url)
+        let (data, response) = try await URLSession.shared.data(for: request)
         
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200 else {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw eBayError.requestFailed
+        }
+        
+        print("🔍 eBay API Status Code: \(httpResponse.statusCode)")
+        
+        guard httpResponse.statusCode == 200 else {
+            if let errorString = String(data: data, encoding: .utf8) {
+                print("🔍 eBay API Error Response: \(errorString)")
+            }
             ErrorLoggingService.shared.logError(
                 eBayError.requestFailed,
-                context: "eBay API"
+                context: "eBay API - Status \(httpResponse.statusCode)"
             )
             throw eBayError.requestFailed
         }
         
-        let decoder = JSONDecoder()
-        let searchResponse = try decoder.decode(eBaySearchResponse.self, from: data)
+        let searchResponse = try JSONDecoder().decode(EBayBrowseResponse.self, from: data)
         
-        guard let searchResult = searchResponse.findCompletedItemsResponse.first?.searchResult.first,
-              let items = searchResult.item else {
+        guard let items = searchResponse.itemSummaries else {
             ErrorLoggingService.shared.logInfo(
                 "No results found on eBay",
                 context: "eBay API"
@@ -121,24 +202,22 @@ final class eBayService {
         }
         
         let priceInfo = items.compactMap { item -> PriceInfo? in
-            guard let title = item.title?.first,
-                  let currentPriceValue = item.sellingStatus?.first?.currentPrice?.first?.value,
-                  let currentPrice = Double(currentPriceValue),
-                  let currency = item.sellingStatus?.first?.currentPrice?.first?.currencyId else {
+            guard let priceValue = item.price?.value,
+                  let price = Double(priceValue),
+                  let currency = item.price?.currency else {
                 return nil
             }
             
-            let shippingCostValue = item.shippingInfo?.first?.shippingServiceCost?.first?.value
-            let shippingCost = shippingCostValue.flatMap { Double($0) }
+            let shippingCost = item.shippingOptions?.first?.shippingCost?.value.flatMap { Double($0) }
             
             return PriceInfo(
-                title: title,
-                currentPrice: currentPrice,
+                title: item.title ?? "Unknown Item",
+                currentPrice: price,
                 currency: currency,
-                condition: item.condition?.first?.conditionDisplayName?.first ?? "Unknown",
-                imageURL: item.galleryURL?.first,
-                listingURL: item.viewItemURL?.first ?? "",
-                location: item.location?.first,
+                condition: item.condition ?? "Unknown",
+                imageURL: item.image?.imageUrl,
+                listingURL: item.itemWebUrl ?? "",
+                location: item.itemLocation?.country,
                 shippingCost: shippingCost
             )
         }
@@ -151,8 +230,10 @@ final class eBayService {
         return priceInfo
     }
     
+    // MARK: - Price Analysis
+    
     func analyzePrices(for itemName: String, condition: String? = nil) async throws -> PriceAnalysis {
-        let results = try await searchItem(query: itemName, condition: condition)
+        let results = try await searchItem(query: itemName, condition: condition, limit: 50)
         
         guard !results.isEmpty else {
             throw eBayError.noResultsFound
@@ -173,89 +254,95 @@ final class eBayService {
         )
     }
     
+    // MARK: - Helpers
+    
     private func mapCondition(_ condition: String) -> String {
         switch condition.lowercased() {
-        case "mint":
-            return "1000"
-        case "near mint", "excellent":
-            return "1500"
+        case "new":
+            return "NEW"
+        case "like new", "near mint":
+            return "LIKE_NEW"
+        case "excellent":
+            return "EXCELLENT"
         case "good":
-            return "3000"
-        case "fair":
-            return "4000"
-        case "poor":
-            return "5000"
+            return "GOOD"
+        case "acceptable":
+            return "ACCEPTABLE"
         default:
-            return "3000"
+            return "USED"
         }
     }
 }
 
 // MARK: - Response Models
 
-struct eBaySearchResponse: Codable {
-    let findCompletedItemsResponse: [FindCompletedItemsResponse]
-}
-
-struct FindCompletedItemsResponse: Codable {
-    let searchResult: [SearchResult]
-}
-
-struct SearchResult: Codable {
-    let item: [eBayItem]?
-}
-
-struct eBayItem: Codable {
-    let title: [String]?
-    let viewItemURL: [String]?
-    let galleryURL: [String]?
-    let location: [String]?
-    let sellingStatus: [SellingStatus]?
-    let shippingInfo: [ShippingInfo]?
-    let condition: [ItemConditionInfo]?
-}
-
-struct SellingStatus: Codable {
-    let currentPrice: [PriceValue]?
-}
-
-struct PriceValue: Codable {
-    let value: String?
-    let currencyId: String?
+struct EBayTokenResponse: Codable {
+    let accessToken: String
+    let expiresIn: Int
+    let tokenType: String
     
     enum CodingKeys: String, CodingKey {
-        case value = "__value__"
-        case currencyId = "@currencyId"
+        case accessToken = "access_token"
+        case expiresIn = "expires_in"
+        case tokenType = "token_type"
     }
 }
 
-struct ShippingInfo: Codable {
-    let shippingServiceCost: [PriceValue]?
+struct EBayBrowseResponse: Codable {
+    let total: Int?
+    let itemSummaries: [EBayItemSummary]?
 }
 
-struct ItemConditionInfo: Codable {
-    let conditionDisplayName: [String]?
+struct EBayItemSummary: Codable {
+    let itemId: String?
+    let title: String?
+    let price: EBayPrice?
+    let condition: String?
+    let image: EBayImage?
+    let itemWebUrl: String?
+    let itemLocation: EBayLocation?
+    let shippingOptions: [EBayShippingOption]?
+}
+
+struct EBayPrice: Codable {
+    let value: String?
+    let currency: String?
+}
+
+struct EBayImage: Codable {
+    let imageUrl: String?
+}
+
+struct EBayLocation: Codable {
+    let country: String?
+}
+
+struct EBayShippingOption: Codable {
+    let shippingCost: EBayPrice?
 }
 
 enum eBayError: LocalizedError {
-    case noAPIKey
+    case noCredentials
     case invalidURL
+    case authFailed
     case requestFailed
     case noResultsFound
-    case invalidResponse
+    case invalidQuery
     
     var errorDescription: String? {
         switch self {
-        case .noAPIKey:
-            return "eBay API key not configured"
+        case .noCredentials:
+            return "eBay credentials not configured"
         case .invalidURL:
             return "Invalid eBay URL"
+        case .authFailed:
+            return "eBay authentication failed"
         case .requestFailed:
             return "eBay request failed"
         case .noResultsFound:
             return "No price data found"
-        case .invalidResponse:
-            return "Invalid eBay response"
+        case .invalidQuery:
+            return "Invalid search query"
         }
     }
 }

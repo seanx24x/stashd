@@ -17,6 +17,9 @@ struct StashdApp: App {
             FirebaseApp.configure()
         }
         
+        // ✅ DEBUG: Print API keys
+            AppConfig.debugPrintKeys()
+        
         // Initialize FirebaseService
         _ = FirebaseService.shared
         

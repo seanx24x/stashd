@@ -77,14 +77,28 @@ enum AppConfig {
     }
     
     // MARK: - eBay
-    
-    static var ebayAPIKey: String? {
-        guard let key = Bundle.main.infoDictionary?["EBAY_API_KEY"] as? String,
-              !key.isEmpty,
-              key != "your-ebay-key-here" else {
+
+    static var ebayClientID: String? {
+        guard let id = Bundle.main.infoDictionary?["EBAY_CLIENT_ID"] as? String,
+              !id.isEmpty,
+              id != "your-ebay-client-id-here" else {
             return nil
         }
-        return key
+        return id
+    }
+
+    static var ebayClientSecret: String? {
+        guard let secret = Bundle.main.infoDictionary?["EBAY_CLIENT_SECRET"] as? String,
+              !secret.isEmpty,
+              secret != "your-ebay-client-secret-here" else {
+            return nil
+        }
+        return secret
+    }
+
+    // Keep the old one for backwards compatibility
+    static var ebayAPIKey: String? {
+        ebayClientID
     }
     
     // MARK: - Validation
@@ -109,5 +123,15 @@ enum AppConfig {
         if ebayAPIKey == nil {
             print("⚠️ eBay API key not configured - price lookup disabled")
         }
+    }
+}
+// MARK: - Debug (REMOVE LATER)
+extension AppConfig {
+    static func debugPrintKeys() {
+        print("🔑 OpenAI Key: \(openAIAPIKey.prefix(10))...")
+        print("🔑 Discogs Token: \(discogsAPIToken?.prefix(10) ?? "MISSING")...")
+        print("🔑 TMDB Key: \(tmdbAPIKey?.prefix(10) ?? "MISSING")...")
+        print("🔑 IGDB Client ID: \(igdbClientID?.prefix(10) ?? "MISSING")...")
+        print("🔑 eBay Key: \(ebayAPIKey?.prefix(10) ?? "MISSING")...")
     }
 }
