@@ -85,6 +85,42 @@ struct ItemDetailView: View {
                             }
                         }
                         
+                        // Purchase Price
+                        if let purchasePrice = item.purchasePrice, purchasePrice > 0 {
+                            HStack {
+                                Text("Purchase Price:")
+                                    .font(.bodyMedium)
+                                    .foregroundStyle(.textSecondary)
+                                
+                                Text(formatCurrency(purchasePrice))
+                                    .font(.bodyMedium.weight(.semibold))
+                                    .foregroundStyle(.textPrimary)
+                            }
+                            
+                            // Show growth if both values exist
+                            if item.estimatedValue > 0 {
+                                let growth = item.estimatedValue - purchasePrice
+                                let growthPercent = (growth / purchasePrice) * 100
+                                
+                                HStack {
+                                    Text("Value Change:")
+                                        .font(.bodyMedium)
+                                        .foregroundStyle(.textSecondary)
+                                    
+                                    HStack(spacing: 4) {
+                                        Image(systemName: growth >= 0 ? "arrow.up" : "arrow.down")
+                                            .font(.caption)
+                                        
+                                        Text(formatCurrency(abs(growth)))
+                                        
+                                        Text("(\(String(format: "%+.1f%%", Double(truncating: growthPercent as NSNumber))))")
+                                    }
+                                    .font(.bodyMedium.weight(.semibold))
+                                    .foregroundStyle(growth >= 0 ? .green : .red)
+                                }
+                            }
+                        }
+                        
                         // Purchase Date
                         if let purchaseDate = item.purchaseDate {
                             HStack {
@@ -116,7 +152,7 @@ struct ItemDetailView: View {
                                         TagChip(text: tag)
                                             .onTapGesture {
                                                 HapticManager.shared.light()
-                                                searchByTag(tag)  // ← UPDATED
+                                                searchByTag(tag)
                                             }
                                     }
                                 }
@@ -252,7 +288,6 @@ struct ItemDetailView: View {
         return formatter.string(from: value as NSDecimalNumber) ?? "$\(value)"
     }
     
-    // ← ADD THIS FUNCTION
     private func searchByTag(_ tag: String) {
         // Dismiss current view
         dismiss()

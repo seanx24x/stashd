@@ -15,6 +15,7 @@ final class CollectionItem {
     var name: String
     var notes: String?
     var estimatedValue: Decimal
+    var purchasePrice: Decimal?
     var condition: ItemCondition?
     var purchaseDate: Date?
     var imageURLs: [URL]
@@ -32,6 +33,7 @@ final class CollectionItem {
         collection: CollectionModel,
         notes: String? = nil,
         estimatedValue: Decimal = 0,
+        purchasePrice: Decimal? = nil,
         condition: ItemCondition? = nil,
         purchaseDate: Date? = nil,
         imageURLs: [URL] = [],
@@ -42,6 +44,7 @@ final class CollectionItem {
         self.collection = collection
         self.notes = notes
         self.estimatedValue = estimatedValue
+        self.purchasePrice = purchasePrice
         self.condition = condition
         self.purchaseDate = purchaseDate
         self.imageURLs = imageURLs

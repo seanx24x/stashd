@@ -5,9 +5,10 @@
 //  Created by Sean Lynch
 //
 
-// File: Core/Services/CollectionInsightsService.swift
-
 import Foundation
+import SwiftData
+
+// MARK: - Models
 
 struct CollectionInsights: Codable {
     let valueAnalysis: String
@@ -18,16 +19,48 @@ struct CollectionInsights: Codable {
     let insights: [String]
 }
 
+struct CollectionStats {
+    let totalValue: Decimal
+    let averageValue: Decimal
+    let itemCount: Int
+    let mintConditionCount: Int
+    let uniqueTagsCount: Int
+    let topValuedItems: [String]
+    let conditionBreakdown: [ItemCondition: Int]
+    let topTags: [(tag: String, count: Int)]
+    let recentItems: [CollectionItem]
+    let valueGrowth: ValueGrowth
+}
+
+struct ValueGrowth {
+    let currentValue: Decimal
+    let purchaseValue: Decimal
+    let growthAmount: Decimal
+    let growthPercentage: Double
+}
+
+struct DuplicateCheckResult: Codable {
+    let isDuplicate: Bool
+    let matchedItems: [String]
+    let confidence: Int
+    let reason: String?
+}
+
+struct CompletionSuggestion: Codable {
+    let itemName: String
+    let reason: String
+    let priority: String
+}
+
 @MainActor
 final class CollectionInsightsService {
     static let shared = CollectionInsightsService()
     
     private init() {}
     
-    // MARK: - Calculate basic statistics
+    // MARK: - Calculate Enhanced Statistics
     
     func calculateStats(for collection: CollectionModel) -> CollectionStats {
-        // ✅ FIX: Safely unwrap items array
         guard let items = collection.items, !items.isEmpty else {
             return CollectionStats(
                 totalValue: 0,
@@ -35,23 +68,86 @@ final class CollectionInsightsService {
                 itemCount: 0,
                 mintConditionCount: 0,
                 uniqueTagsCount: 0,
-                topValuedItems: []
+                topValuedItems: [],
+                conditionBreakdown: [:],
+                topTags: [],
+                recentItems: [],
+                valueGrowth: ValueGrowth(
+                    currentValue: 0,
+                    purchaseValue: 0,
+                    growthAmount: 0,
+                    growthPercentage: 0
+                )
             )
         }
         
-        let totalValue = items.reduce(Decimal(0)) { $0 + $1.estimatedValue }
+        let totalValue = items.reduce(Decimal(0)) { $0 + ($1.estimatedValue ?? 0) }
         let averageValue = totalValue / Decimal(items.count)
         
+        // Condition breakdown
         let itemsByCondition = Dictionary(grouping: items) { $0.condition }
         let mintCount = itemsByCondition[.mint]?.count ?? 0
         
+        var conditionBreakdown: [ItemCondition: Int] = [:]
+        for item in items {
+            if let condition = item.condition {
+                conditionBreakdown[condition, default: 0] += 1
+            }
+        }
+        
+        // Tags analysis
         let allTags = items.flatMap { $0.tags }
         let uniqueTags = Set(allTags)
         
+        var tagCounts: [String: Int] = [:]
+        for item in items {
+            for tag in item.tags {
+                tagCounts[tag, default: 0] += 1
+            }
+        }
+        
+        let topTags = tagCounts
+            .sorted { $0.value > $1.value }
+            .prefix(5)
+            .map { (tag: $0.key, count: $0.value) }
+        
+        // Top valued items
         let topValuedItems = items
-            .sorted { $0.estimatedValue > $1.estimatedValue }
+            .sorted { ($0.estimatedValue ?? 0) > ($1.estimatedValue ?? 0) }
             .prefix(3)
             .map { $0.name }
+        
+        // Recent items
+        let recentItems = items
+            .sorted { $0.createdAt > $1.createdAt }
+            .prefix(5)
+            .map { $0 }
+        
+        // Value growth calculation - NOW ACCURATE!
+        var totalPurchasePrice = Decimal(0)
+        var itemsWithPurchasePrice = 0
+
+        for item in items {
+            if let purchasePrice = item.purchasePrice, purchasePrice > 0 {
+                totalPurchasePrice += purchasePrice
+                itemsWithPurchasePrice += 1
+            } else {
+                // No purchase price recorded, assume current value as purchase price (0% growth)
+                totalPurchasePrice += (item.estimatedValue ?? 0)
+            }
+        }
+
+        let growthAmount = totalValue - totalPurchasePrice
+        let growthPercentage = totalPurchasePrice > 0
+            ? Double(truncating: (growthAmount / totalPurchasePrice * 100) as NSDecimalNumber)
+            : 0
+
+        let valueGrowth = ValueGrowth(
+            currentValue: totalValue,
+            purchaseValue: totalPurchasePrice,
+            growthAmount: growthAmount,
+            growthPercentage: growthPercentage
+        )
         
         return CollectionStats(
             totalValue: totalValue,
@@ -59,7 +155,11 @@ final class CollectionInsightsService {
             itemCount: items.count,
             mintConditionCount: mintCount,
             uniqueTagsCount: uniqueTags.count,
-            topValuedItems: Array(topValuedItems)
+            topValuedItems: Array(topValuedItems),
+            conditionBreakdown: conditionBreakdown,
+            topTags: topTags,
+            recentItems: recentItems,
+            valueGrowth: valueGrowth
         )
     }
     
@@ -69,7 +169,6 @@ final class CollectionInsightsService {
         for collection: CollectionModel,
         stats: CollectionStats
     ) async throws -> CollectionInsights {
-        // ✅ FIX: Use categoryEnum computed property instead of .rawValue on String
         let categoryName = collection.categoryEnum.rawValue
         
         let prompt = """
@@ -82,6 +181,7 @@ final class CollectionInsightsService {
         Average Item Value: $\(stats.averageValue)
         Mint Condition Items: \(stats.mintConditionCount)
         Unique Tags: \(stats.uniqueTagsCount)
+        Value Growth: \(String(format: "%.1f", stats.valueGrowth.growthPercentage))%
         Top Items: \(stats.topValuedItems.joined(separator: ", "))
         
         Provide insights in this JSON format:
@@ -100,7 +200,7 @@ final class CollectionInsightsService {
         let url = URL(string: "https://api.openai.com/v1/chat/completions")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.addValue("Bearer \(OpenAIService.shared.apiKey)", forHTTPHeaderField: "Authorization")
+        request.addValue("Bearer \(AppConfig.openAIAPIKey)", forHTTPHeaderField: "Authorization")
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         
         let requestBody: [String: Any] = [
@@ -121,11 +221,16 @@ final class CollectionInsightsService {
         
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         
+        ErrorLoggingService.shared.logInfo(
+            "Generating AI insights for collection: \(collection.title)",
+            context: "Collection Insights"
+        )
+        
         let (data, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
-            throw OpenAIError.requestFailed
+            throw InsightsError.requestFailed
         }
         
         if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -134,17 +239,22 @@ final class CollectionInsightsService {
            let message = firstChoice["message"] as? [String: Any],
            let content = message["content"] as? String {
             
-            // Extract JSON from response
             let jsonString = extractJSON(from: content)
             guard let jsonData = jsonString.data(using: .utf8) else {
-                throw OpenAIError.invalidJSON
+                throw InsightsError.invalidResponse
             }
             
             let insights = try JSONDecoder().decode(CollectionInsights.self, from: jsonData)
+            
+            ErrorLoggingService.shared.logInfo(
+                "Generated insights successfully",
+                context: "Collection Insights"
+            )
+            
             return insights
         }
         
-        throw OpenAIError.invalidResponse
+        throw InsightsError.invalidResponse
     }
     
     // MARK: - Duplicate Detection
@@ -155,7 +265,6 @@ final class CollectionInsightsService {
         existingItems: [CollectionItem]
     ) async throws -> DuplicateCheckResult {
         
-        // If collection is empty, no duplicates
         if existingItems.isEmpty {
             return DuplicateCheckResult(
                 isDuplicate: false,
@@ -197,7 +306,7 @@ final class CollectionInsightsService {
         let url = URL(string: "https://api.openai.com/v1/chat/completions")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.addValue("Bearer \(OpenAIService.shared.apiKey)", forHTTPHeaderField: "Authorization")
+        request.addValue("Bearer \(AppConfig.openAIAPIKey)", forHTTPHeaderField: "Authorization")
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         
         let requestBody: [String: Any] = [
@@ -222,7 +331,7 @@ final class CollectionInsightsService {
         
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
-            throw OpenAIError.requestFailed
+            throw InsightsError.requestFailed
         }
         
         if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -233,14 +342,14 @@ final class CollectionInsightsService {
             
             let jsonString = extractJSON(from: content)
             guard let jsonData = jsonString.data(using: .utf8) else {
-                throw OpenAIError.invalidJSON
+                throw InsightsError.invalidResponse
             }
             
             let result = try JSONDecoder().decode(DuplicateCheckResult.self, from: jsonData)
             return result
         }
         
-        throw OpenAIError.invalidResponse
+        throw InsightsError.invalidResponse
     }
     
     // MARK: - Completion Suggestions
@@ -249,7 +358,6 @@ final class CollectionInsightsService {
         for collection: CollectionModel
     ) async throws -> [CompletionSuggestion] {
         
-        // ✅ FIX: Safely unwrap items array
         guard let items = collection.items, !items.isEmpty else {
             return []
         }
@@ -258,7 +366,6 @@ final class CollectionInsightsService {
             "- \(item.name)"
         }.joined(separator: "\n")
         
-        // ✅ FIX: Use categoryEnum computed property
         let categoryName = collection.categoryEnum.rawValue
         
         let prompt = """
@@ -289,7 +396,7 @@ final class CollectionInsightsService {
         let url = URL(string: "https://api.openai.com/v1/chat/completions")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.addValue("Bearer \(OpenAIService.shared.apiKey)", forHTTPHeaderField: "Authorization")
+        request.addValue("Bearer \(AppConfig.openAIAPIKey)", forHTTPHeaderField: "Authorization")
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         
         let requestBody: [String: Any] = [
@@ -314,7 +421,7 @@ final class CollectionInsightsService {
         
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
-            throw OpenAIError.requestFailed
+            throw InsightsError.requestFailed
         }
         
         if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -325,14 +432,23 @@ final class CollectionInsightsService {
             
             let jsonString = extractJSON(from: content)
             guard let jsonData = jsonString.data(using: .utf8) else {
-                throw OpenAIError.invalidJSON
+                throw InsightsError.invalidResponse
             }
             
             let suggestions = try JSONDecoder().decode([CompletionSuggestion].self, from: jsonData)
             return suggestions
         }
         
-        throw OpenAIError.invalidResponse
+        throw InsightsError.invalidResponse
+    }
+    
+    // MARK: - Helper Methods
+    
+    func formatCurrency(_ value: Decimal) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.maximumFractionDigits = 0
+        return formatter.string(from: value as NSDecimalNumber) ?? "$\(value)"
     }
     
     private func extractJSON(from text: String) -> String {
@@ -349,26 +465,21 @@ final class CollectionInsightsService {
     }
 }
 
-// MARK: - Models
+// MARK: - Errors
 
-struct CollectionStats {
-    let totalValue: Decimal
-    let averageValue: Decimal
-    let itemCount: Int
-    let mintConditionCount: Int
-    let uniqueTagsCount: Int
-    let topValuedItems: [String]
-}
-
-struct DuplicateCheckResult: Codable {
-    let isDuplicate: Bool
-    let matchedItems: [String]
-    let confidence: Int
-    let reason: String?
-}
-
-struct CompletionSuggestion: Codable {
-    let itemName: String
-    let reason: String
-    let priority: String
+enum InsightsError: LocalizedError {
+    case requestFailed
+    case invalidResponse
+    case noItems
+    
+    var errorDescription: String? {
+        switch self {
+        case .requestFailed:
+            return "Failed to generate insights"
+        case .invalidResponse:
+            return "Invalid response from insights service"
+        case .noItems:
+            return "No items in collection"
+        }
+    }
 }

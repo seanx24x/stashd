@@ -557,11 +557,30 @@ struct AddItemView: View {
                 }
             }
             
+            // ✅ FIX: Parse price values correctly (divide by 100 if needed)
+            let purchasePriceValue: Decimal?
+            if !purchasePrice.isEmpty, let value = Decimal(string: purchasePrice) {
+                // Check if value seems to be in cents (> 1000 suggests cents)
+                purchasePriceValue = value > 1000 ? value / 100 : value
+            } else {
+                purchasePriceValue = nil
+            }
+            
+            let estimatedValueValue: Decimal?
+            if !estimatedValue.isEmpty, let value = Decimal(string: estimatedValue) {
+                // Check if value seems to be in cents (> 1000 suggests cents)
+                estimatedValueValue = value > 1000 ? value / 100 : value
+            } else {
+                estimatedValueValue = nil
+            }
+            
             // Create item
             let item = CollectionItem(
                 name: name,
                 collection: collection,
                 notes: itemDescription.isEmpty ? nil : itemDescription,
+                estimatedValue: estimatedValueValue ?? purchasePriceValue ?? 0,
+                purchasePrice: purchasePriceValue,
                 condition: selectedCondition,
                 purchaseDate: purchaseDate,
                 imageURLs: imageURLs,
@@ -570,13 +589,6 @@ struct AddItemView: View {
             
             // Safely handle optional items array
             item.displayOrder = collection.items?.count ?? 0
-            
-            // Set estimated value from either field
-            if let valueEstimate = Decimal(string: estimatedValue) {
-                item.estimatedValue = valueEstimate
-            } else if let purchaseValue = Decimal(string: purchasePrice) {
-                item.estimatedValue = purchaseValue
-            }
             
             modelContext.insert(item)
             try modelContext.save()

@@ -22,6 +22,7 @@ struct CollectionDetailView: View {
     @State private var isGeneratingInsights = false
     @State private var completionSuggestions: [CompletionSuggestion]? = nil
     @State private var isGeneratingCompletions = false
+    @State private var showInsights = false
     
     // ✅ FIXED: Computed property for all tags - safely unwrap items
     private var allTags: [String] {
@@ -327,6 +328,15 @@ struct CollectionDetailView: View {
                 Menu {
                     Button {
                         HapticManager.shared.light()
+                        showInsights = true
+                    } label: {
+                        Label("View Insights", systemImage: "chart.bar.fill")
+                    }
+                    
+                    Divider()
+                    
+                    Button {
+                        HapticManager.shared.light()
                         showEditCollection = true
                     } label: {
                         Label("Edit Collection", systemImage: "pencil")
@@ -348,7 +358,10 @@ struct CollectionDetailView: View {
         }
         .sheet(isPresented: $showAddItem) {
             AddItemView(collection: collection)
-                .environment(coordinator)  // ✅ ADD THIS
+                .environment(coordinator)
+        }
+        .sheet(isPresented: $showInsights) {
+            CollectionInsightsView(collection: collection)
         }
         .sheet(isPresented: $showAIScan) {
             AIItemScanView(collection: collection) { newItem in
