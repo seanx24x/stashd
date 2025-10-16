@@ -5,6 +5,7 @@
 //  Created by Sean Lynch on 10/11/25.
 //
 
+
 // File: Core/Models/ActivityItem.swift
 
 import SwiftData
@@ -49,6 +50,47 @@ final class ActivityItem {
         self.createdAt = createdAt
         self.isRead = false
     }
+    
+    // ✅ NEW: Convenience initializer for Firestore sync (allows nil actor/recipient)
+    convenience init(
+        id: UUID = UUID(),
+        type: ActivityType,
+        actorOptional: UserProfile? = nil,
+        recipientOptional: UserProfile? = nil,
+        collection: CollectionModel? = nil,
+        comment: Comment? = nil,
+        createdAt: Date = .now
+    ) {
+        // Use placeholder profiles if nil (will be updated by sync service)
+        let placeholderActor = actorOptional ?? UserProfile(
+            firebaseUID: "placeholder",
+            username: "unknown",
+            displayName: "Unknown User"
+        )
+        let placeholderRecipient = recipientOptional ?? UserProfile(
+            firebaseUID: "placeholder",
+            username: "unknown",
+            displayName: "Unknown User"
+        )
+        
+        self.init(
+            id: id,
+            type: type,
+            actor: placeholderActor,
+            recipient: placeholderRecipient,
+            collection: collection,
+            comment: comment,
+            createdAt: createdAt
+        )
+        
+        // If using placeholders, set to nil after init
+        if actorOptional == nil {
+            self.actor = nil
+        }
+        if recipientOptional == nil {
+            self.recipient = nil
+        }
+    }
 }
 
 enum ActivityType: String, Codable {
@@ -76,41 +118,28 @@ enum ActivityType: String, Codable {
     }
 }
 
-// MARK: - Firestore Conversion
+// MARK: - Firestore Sync Helpers
 
 extension ActivityItem {
     static func fromFirestore(_ data: [String: Any], id: String) throws -> ActivityItem {
         guard let typeString = data["type"] as? String,
               let type = ActivityType(rawValue: typeString) else {
-            throw SyncError.missingRequiredField("type")
+            throw FirestoreError.invalidData
         }
         
-        // Note: actor and recipient will need to be set separately
-        // after fetching from database, as they're relationships
-        // This creates a temporary activity that will be updated with relationships later
-        let tempActor = UserProfile(
-            firebaseUID: data["actorID"] as? String ?? "unknown",
-            username: "temp",
-            displayName: "Loading..."
-        )
-        
-        let tempRecipient = UserProfile(
-            firebaseUID: data["recipientID"] as? String ?? "unknown",
-            username: "temp",
-            displayName: "Loading..."
-        )
-        
+        // Create activity with optional convenience initializer
         let activity = ActivityItem(
             id: UUID(uuidString: id) ?? UUID(),
             type: type,
-            actor: tempActor,
-            recipient: tempRecipient
+            actorOptional: nil,  // ✅ Will be populated later by sync service
+            recipientOptional: nil,  // ✅ Will be populated later by sync service
+            createdAt: data["createdAt"] as? Date ?? Date()
         )
         
         activity.isRead = data["isRead"] as? Bool ?? false
         
-        if let createdTimestamp = data["createdAt"] as? Timestamp {
-            activity.createdAt = createdTimestamp.dateValue()
+        if let timestamp = data["createdAt"] as? Timestamp {
+            activity.createdAt = timestamp.dateValue()
         }
         
         return activity

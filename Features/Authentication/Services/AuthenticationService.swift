@@ -180,6 +180,12 @@ final class AuthenticationService: NSObject {
         // ✅ NEW: Save session to Keychain
         saveUserSession(userID: userID)
         
+        // ✅ NEW: Start real-time sync
+        RealtimeSyncService.shared.startSync(
+            for: userID,
+            modelContext: modelContext
+        )
+        
         ErrorLoggingService.shared.logInfo(
             "User completed onboarding",
             context: "Authentication"
@@ -190,6 +196,9 @@ final class AuthenticationService: NSObject {
         guard let modelContext else { return }
         
         do {
+            // ✅ NEW: Stop real-time sync FIRST
+            RealtimeSyncService.shared.stopSync()
+            
             // Sign out from Firebase
             try FirebaseService.shared.auth.signOut()
             
