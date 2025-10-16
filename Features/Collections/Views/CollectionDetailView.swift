@@ -348,6 +348,7 @@ struct CollectionDetailView: View {
         }
         .sheet(isPresented: $showAddItem) {
             AddItemView(collection: collection)
+                .environment(coordinator)  // ✅ ADD THIS
         }
         .sheet(isPresented: $showAIScan) {
             AIItemScanView(collection: collection) { newItem in
@@ -899,11 +900,9 @@ struct ItemGridCard: View {
         owner: user
     )
     
-    let coordinator = AppCoordinator()
-    
     return NavigationStack {
-        CollectionDetailView(collection: collection)
-            .environment(coordinator)
+        AddItemView(collection: collection)
             .modelContainer(container)
+            .environment(AppCoordinator())  // ✅ ADD THIS
     }
 }
