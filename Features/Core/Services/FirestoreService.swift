@@ -73,16 +73,16 @@ final class FirestoreService {
             "id": collection.id.uuidString,
             "title": collection.title,
             "description": collection.collectionDescription ?? "",
-            "category": collection.category, // ✅ Already a String, no .rawValue needed
+            "category": collection.category,
             "coverImageURL": collection.coverImageURL?.absoluteString ?? "",
             "ownerUID": ownerUID,
             "isPublic": collection.isPublic,
             "createdAt": Timestamp(date: collection.createdAt),
             "updatedAt": Timestamp(date: collection.updatedAt),
             "viewCount": collection.viewCount,
-            "likeCount": collection.likeCount, // ✅ Using the existing property
-            "commentCount": collection.commentCount, // ✅ Using the existing property
-            "itemCount": collection.items?.count ?? 0 // ✅ Safely unwrapping optional array
+            "likeCount": collection.likeCount,
+            "commentCount": collection.commentCount,
+            "itemCount": collection.items?.count ?? 0
         ]
         
         try await db.collection(collectionsCollection)
@@ -133,7 +133,62 @@ final class FirestoreService {
         
         return snapshot.documents.map { $0.data() }
     }
-}
+    
+    // MARK: - FCM Token Management
+    
+    func saveFCMToken(_ token: String, for userID: String) async throws {
+        let data: [String: Any] = [
+            "fcmToken": token,
+            "tokenUpdatedAt": Timestamp(date: Date())
+        ]
+        
+        try await db.collection(userProfilesCollection)
+            .document(userID)
+            .setData(data, merge: true)
+        
+        ErrorLoggingService.shared.logInfo(
+            "Saved FCM token to Firestore",
+            context: "Notifications"
+        )
+    }
+    
+    func clearFCMToken(for userID: String) async throws {
+        let data: [String: Any] = [
+            "fcmToken": FieldValue.delete(),
+            "tokenUpdatedAt": FieldValue.delete()
+        ]
+        
+        try await db.collection(userProfilesCollection)
+            .document(userID)
+            .updateData(data)
+        
+        ErrorLoggingService.shared.logInfo(
+            "Cleared FCM token from Firestore",
+            context: "Notifications"
+        )
+    }
+    
+    // MARK: - Notification Queue
+    
+    func queueNotification(_ notification: PushNotificationPayload) async throws {
+        let data: [String: Any] = [
+            "recipientUserID": notification.userID,
+            "type": notification.type.rawValue,
+            "actorName": notification.actorName,
+            "collectionTitle": notification.collectionTitle ?? "",
+            "timestamp": Timestamp(date: notification.timestamp),
+            "processed": false
+        ]
+        
+        try await db.collection("notificationQueue")
+            .addDocument(data: data)
+        
+        ErrorLoggingService.shared.logInfo(
+            "Queued notification in Firestore",
+            context: "Notifications"
+        )
+    }
+} // ← This closes the FirestoreService class
 
 enum FirestoreError: LocalizedError {
     case missingOwner

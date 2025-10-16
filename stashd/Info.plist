@@ -2,13 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>NSFaceIDUsageDescription</key>
-	<string>Stashd uses Face ID to protect your collections and sensitive data</string>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>remote-notification</string>
-	</array>
-	<key>OPENAI_API_KEY</key>
-	<string>$(OPENAI_API_KEY)</string>
+    <key>NSFaceIDUsageDescription</key>
+    <string>Stashd uses Face ID to protect your collections and sensitive data</string>
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>remote-notification</string>
+    </array>
+    <key>OPENAI_API_KEY</key>
+    <string>$(OPENAI_API_KEY)</string>
+    <key>FirebaseAppDelegateProxyEnabled</key>
+    <false/>
 </dict>
 </plist>

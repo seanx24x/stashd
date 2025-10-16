@@ -185,6 +185,8 @@ final class AuthenticationService: NSObject {
             for: userID,
             modelContext: modelContext
         )
+        // ✅ NEW: Save FCM token for push notifications
+        await PushNotificationService.shared.saveFCMToken(for: userID)
         
         ErrorLoggingService.shared.logInfo(
             "User completed onboarding",
@@ -198,6 +200,13 @@ final class AuthenticationService: NSObject {
         do {
             // ✅ NEW: Stop real-time sync FIRST
             RealtimeSyncService.shared.stopSync()
+            
+            // ✅ NEW: Clear FCM token (non-blocking)
+            if let userID = currentUser?.firebaseUID {
+                Task {
+                    await PushNotificationService.shared.clearFCMToken(for: userID)
+                }
+            }
             
             // Sign out from Firebase
             try FirebaseService.shared.auth.signOut()

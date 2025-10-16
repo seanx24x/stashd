@@ -69,8 +69,6 @@ final class UserProfileViewModel {
         }
     }
     
-    // File: Features/Profile/ViewModels/UserProfileViewModel.swift
-
     func toggleFollow() {
         guard let user else { return }
         
@@ -100,6 +98,13 @@ final class UserProfileViewModel {
             // Sync activity to Firestore
             Task {
                 try? await FirestoreService.shared.saveActivity(activity)
+                
+                // ✅ NEW: Send push notification
+                await PushNotificationService.shared.sendNotification(
+                    to: user.firebaseUID,
+                    type: .follow,
+                    actorName: currentUser.displayName
+                )
             }
         }
         

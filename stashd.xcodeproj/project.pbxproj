@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C04CA27A2EA1815D0003AEB0 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = C04CA2792EA1815D0003AEB0 /* FirebaseMessaging */; };
 		C0E1B5F82E98AFFA00D8A6BA /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = C0E1B5F72E98AFFA00D8A6BA /* FirebaseAuth */; };
 		C0E1B5FA2E98AFFA00D8A6BA /* FirebaseDatabase in Frameworks */ = {isa = PBXBuildFile; productRef = C0E1B5F92E98AFFA00D8A6BA /* FirebaseDatabase */; };
 		C0E1B5FC2E98AFFA00D8A6BA /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = C0E1B5FB2E98AFFA00D8A6BA /* FirebaseStorage */; };
@@ -66,6 +67,7 @@
 			files = (
 				C0E1B5FA2E98AFFA00D8A6BA /* FirebaseDatabase in Frameworks */,
 				C0E1B5FE2E98B0F300D8A6BA /* FirebaseFirestore in Frameworks */,
+				C04CA27A2EA1815D0003AEB0 /* FirebaseMessaging in Frameworks */,
 				C0E1B5F82E98AFFA00D8A6BA /* FirebaseAuth in Frameworks */,
 				C0E1B5FC2E98AFFA00D8A6BA /* FirebaseStorage in Frameworks */,
 			);
@@ -122,6 +124,7 @@
 				C0E1B5F92E98AFFA00D8A6BA /* FirebaseDatabase */,
 				C0E1B5FB2E98AFFA00D8A6BA /* FirebaseStorage */,
 				C0E1B5FD2E98B0F300D8A6BA /* FirebaseFirestore */,
+				C04CA2792EA1815D0003AEB0 /* FirebaseMessaging */,
 			);
 			productName = stashd;
 			productReference = C0E1B59F2E98AA2700D8A6BA /* stashd.app */;
@@ -439,6 +442,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		C04CA2792EA1815D0003AEB0 /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C0E1B5F62E98AFFA00D8A6BA /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
+		};
 		C0E1B5F72E98AFFA00D8A6BA /* FirebaseAuth */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C0E1B5F62E98AFFA00D8A6BA /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;

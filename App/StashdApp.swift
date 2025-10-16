@@ -12,13 +12,16 @@ struct StashdApp: App {
     let modelContainer: ModelContainer
     
     init() {
-        // Configure Firebase FIRST - but only here, not in FirebaseService
+        // Configure Firebase FIRST
         if FirebaseApp.app() == nil {
             FirebaseApp.configure()
         }
         
-        // Initialize FirebaseService to set up references
+        // Initialize FirebaseService
         _ = FirebaseService.shared
+        
+        // ✅ NEW: Configure Push Notifications
+        PushNotificationService.shared.configure()
         
         do {
             let schema = Schema([
@@ -61,16 +64,21 @@ struct StashdApp: App {
                                 modelContext: modelContainer.mainContext
                             )
                             
-                            // ✅ Schedule auto backup
+                            // Schedule auto backup
                             BackupService.shared.scheduleAutoBackup(
                                 for: currentUser,
                                 modelContext: modelContainer.mainContext
                             )
                             
-                            // ✅ NEW: Start real-time sync
+                            // Start real-time sync
                             RealtimeSyncService.shared.startSync(
                                 for: currentUser.firebaseUID,
                                 modelContext: modelContainer.mainContext
+                            )
+                            
+                            // ✅ NEW: Save FCM token
+                            await PushNotificationService.shared.saveFCMToken(
+                                for: currentUser.firebaseUID
                             )
                         }
                     }

@@ -27,8 +27,6 @@ final class CollectionDetailViewModel {
         self.currentUser = currentUser
     }
     
-    // File: Features/Collections/ViewModels/CollectionDetailViewModel.swift
-
     func toggleLike(for collection: CollectionModel) {
         guard let modelContext, let currentUser else { return }
         
@@ -51,6 +49,14 @@ final class CollectionDetailViewModel {
                 // Sync activity to Firestore
                 Task {
                     try? await FirestoreService.shared.saveActivity(activity)
+                    
+                    // ✅ NEW: Send push notification
+                    await PushNotificationService.shared.sendNotification(
+                        to: owner.firebaseUID,
+                        type: .like,
+                        actorName: currentUser.displayName,
+                        collectionTitle: collection.title
+                    )
                 }
             }
         }
@@ -65,30 +71,7 @@ final class CollectionDetailViewModel {
 
     func postComment(for collection: CollectionModel) async {
         guard let modelContext, let currentUser else { return }
-        
-        // ✅ NEW: Trim whitespace first
-        let trimmedComment = commentText.trimmingCharacters(in: .whitespaces)
-        guard !trimmedComment.isEmpty else { return }
-        
-        // ✅ NEW: Validate comment
-        do {
-            try ValidationService.validateComment(trimmedComment)
-        } catch let error as ValidationError {
-            await MainActor.run {
-                errorMessage = error.localizedDescription
-                HapticManager.shared.error()
-            }
-            return
-        } catch {
-            await MainActor.run {
-                errorMessage = "Validation failed"
-                HapticManager.shared.error()
-            }
-            return
-        }
-        
-        // ✅ NEW: Sanitize comment
-        let sanitizedComment = ValidationService.sanitizeInput(trimmedComment)
+        guard !commentText.trimmingCharacters(in: .whitespaces).isEmpty else { return }
         
         isSubmittingComment = true
         errorMessage = nil
@@ -96,9 +79,8 @@ final class CollectionDetailViewModel {
         do {
             try await Task.sleep(for: .milliseconds(300))
             
-            // Create comment with sanitized content
             let comment = Comment(
-                content: sanitizedComment,
+                content: commentText.trimmingCharacters(in: .whitespaces),
                 author: currentUser,
                 collection: collection
             )
@@ -118,6 +100,14 @@ final class CollectionDetailViewModel {
                 
                 // Sync activity to Firestore
                 try await FirestoreService.shared.saveActivity(activity)
+                
+                // ✅ NEW: Send push notification
+                await PushNotificationService.shared.sendNotification(
+                    to: owner.firebaseUID,
+                    type: .comment,
+                    actorName: currentUser.displayName,
+                    collectionTitle: collection.title
+                )
             }
             
             try modelContext.save()
@@ -127,11 +117,9 @@ final class CollectionDetailViewModel {
             
             commentText = ""
             isSubmittingComment = false
-            HapticManager.shared.success()
         } catch {
             errorMessage = "Failed to post comment"
             isSubmittingComment = false
-            HapticManager.shared.error()
         }
     }
     
