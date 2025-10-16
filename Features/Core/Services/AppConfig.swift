@@ -5,9 +5,19 @@
 //  Created by Sean Lynch on 10/13/25.
 //
 
+
+//
+//  AppConfig.swift
+//  stashd
+//
+//  Created by Sean Lynch
+//
+
 import Foundation
 
 enum AppConfig {
+    // MARK: - OpenAI
+    
     static var openAIAPIKey: String {
         guard let key = Bundle.main.infoDictionary?["OPENAI_API_KEY"] as? String,
               !key.isEmpty,
@@ -21,37 +31,83 @@ enum AppConfig {
             3. Make sure Config.xcconfig is in .gitignore
             """)
         }
-        
-        // ✅ NEW: Validate OpenAI key format
-        guard key.hasPrefix("sk-") || key.hasPrefix("sk-proj-") else {
-            fatalError("""
-            ⚠️ Invalid OPENAI_API_KEY format!
-            
-            OpenAI API keys must start with 'sk-' or 'sk-proj-'
-            Your key appears to be invalid or from a different service.
-            
-            Get a valid key from: https://platform.openai.com/api-keys
-            """)
-        }
-        
-        // ✅ NEW: Validate minimum length (OpenAI keys are typically 48+ characters)
-        guard key.count >= 40 else {
-            fatalError("""
-            ⚠️ OPENAI_API_KEY appears truncated!
-            
-            OpenAI keys are typically 48+ characters long.
-            Your key is only \(key.count) characters.
-            
-            Please check that you copied the entire key.
-            """)
-        }
-        
         return key
     }
     
-    // ✅ NEW: Validate key at app launch without exposing it
+    // MARK: - Discogs
+    
+    static var discogsAPIToken: String? {
+        guard let token = Bundle.main.infoDictionary?["DISCOGS_API_TOKEN"] as? String,
+              !token.isEmpty,
+              token != "your-discogs-token-here" else {
+            return nil
+        }
+        return token
+    }
+    
+    // MARK: - TMDB (The Movie Database)
+    
+    static var tmdbAPIKey: String? {
+        guard let key = Bundle.main.infoDictionary?["TMDB_API_KEY"] as? String,
+              !key.isEmpty,
+              key != "your-tmdb-key-here" else {
+            return nil
+        }
+        return key
+    }
+    
+    // MARK: - IGDB (Internet Game Database)
+    
+    static var igdbClientID: String? {
+        guard let id = Bundle.main.infoDictionary?["IGDB_CLIENT_ID"] as? String,
+              !id.isEmpty,
+              id != "your-igdb-client-id-here" else {
+            return nil
+        }
+        return id
+    }
+    
+    static var igdbClientSecret: String? {
+        guard let secret = Bundle.main.infoDictionary?["IGDB_CLIENT_SECRET"] as? String,
+              !secret.isEmpty,
+              secret != "your-igdb-client-secret-here" else {
+            return nil
+        }
+        return secret
+    }
+    
+    // MARK: - eBay
+    
+    static var ebayAPIKey: String? {
+        guard let key = Bundle.main.infoDictionary?["EBAY_API_KEY"] as? String,
+              !key.isEmpty,
+              key != "your-ebay-key-here" else {
+            return nil
+        }
+        return key
+    }
+    
+    // MARK: - Validation
+    
     static func validateConfiguration() {
-        _ = openAIAPIKey // This will trigger all validations
-        print("✅ OpenAI API key validated successfully")
+        // Only OpenAI is required for core functionality
+        _ = openAIAPIKey // This will crash if not configured
+        
+        // Log warnings for optional APIs
+        if discogsAPIToken == nil {
+            print("⚠️ Discogs API token not configured - vinyl search disabled")
+        }
+        
+        if tmdbAPIKey == nil {
+            print("⚠️ TMDB API key not configured - movie search disabled")
+        }
+        
+        if igdbClientID == nil || igdbClientSecret == nil {
+            print("⚠️ IGDB API not configured - video game search disabled")
+        }
+        
+        if ebayAPIKey == nil {
+            print("⚠️ eBay API key not configured - price lookup disabled")
+        }
     }
 }

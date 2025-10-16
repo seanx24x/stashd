@@ -13,10 +13,9 @@ import Foundation
 final class eBayService {
     static let shared = eBayService()
     
-    private let appID = "YOUR_EBAY_APP_ID_HERE"  // ← REPLACE WITH YOUR APP ID
-    private let certID = "YOUR_EBAY_CERT_ID_HERE"  // ← REPLACE WITH YOUR CERT ID
+    private var apiKey: String? { AppConfig.ebayAPIKey }
     
-    // Use sandbox for testing, production for live
+    // Use production endpoint
     private let findingEndpoint = "https://svcs.ebay.com/services/search/FindingService/v1"
     
     private init() {}
@@ -66,12 +65,16 @@ final class eBayService {
     }
     
     func searchItem(query: String, condition: String? = nil) async throws -> [PriceInfo] {
+        guard let apiKey = apiKey else {
+            throw eBayError.noAPIKey
+        }
+        
         var components = URLComponents(string: findingEndpoint)!
         
         var queryItems = [
             URLQueryItem(name: "OPERATION-NAME", value: "findCompletedItems"),
             URLQueryItem(name: "SERVICE-VERSION", value: "1.0.0"),
-            URLQueryItem(name: "SECURITY-APPNAME", value: appID),
+            URLQueryItem(name: "SECURITY-APPNAME", value: apiKey),
             URLQueryItem(name: "RESPONSE-DATA-FORMAT", value: "JSON"),
             URLQueryItem(name: "keywords", value: query),
             URLQueryItem(name: "paginationInput.entriesPerPage", value: "20"),
@@ -89,10 +92,19 @@ final class eBayService {
             throw eBayError.invalidURL
         }
         
+        ErrorLoggingService.shared.logInfo(
+            "Searching eBay: \(query)",
+            context: "eBay API"
+        )
+        
         let (data, response) = try await URLSession.shared.data(from: url)
         
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
+            ErrorLoggingService.shared.logError(
+                eBayError.requestFailed,
+                context: "eBay API"
+            )
             throw eBayError.requestFailed
         }
         
@@ -101,10 +113,14 @@ final class eBayService {
         
         guard let searchResult = searchResponse.findCompletedItemsResponse.first?.searchResult.first,
               let items = searchResult.item else {
+            ErrorLoggingService.shared.logInfo(
+                "No results found on eBay",
+                context: "eBay API"
+            )
             return []
         }
         
-        return items.compactMap { item -> PriceInfo? in
+        let priceInfo = items.compactMap { item -> PriceInfo? in
             guard let title = item.title?.first,
                   let currentPriceValue = item.sellingStatus?.first?.currentPrice?.first?.value,
                   let currentPrice = Double(currentPriceValue),
@@ -126,6 +142,13 @@ final class eBayService {
                 shippingCost: shippingCost
             )
         }
+        
+        ErrorLoggingService.shared.logInfo(
+            "Found \(priceInfo.count) items on eBay",
+            context: "eBay API"
+        )
+        
+        return priceInfo
     }
     
     func analyzePrices(for itemName: String, condition: String? = nil) async throws -> PriceAnalysis {
@@ -215,6 +238,7 @@ struct ItemConditionInfo: Codable {
 }
 
 enum eBayError: LocalizedError {
+    case noAPIKey
     case invalidURL
     case requestFailed
     case noResultsFound
@@ -222,6 +246,8 @@ enum eBayError: LocalizedError {
     
     var errorDescription: String? {
         switch self {
+        case .noAPIKey:
+            return "eBay API key not configured"
         case .invalidURL:
             return "Invalid eBay URL"
         case .requestFailed:
