@@ -70,6 +70,12 @@ struct ProfileView: View {
                 destinationView(for: destination)
             }
             .toolbar {
+                // ✅ NEW: Add sync status on the left
+                ToolbarItem(placement: .topBarLeading) {
+                    SyncStatusView()
+                }
+                
+                // Existing settings button on the right
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         HapticManager.shared.selection()

@@ -26,13 +26,16 @@ struct StashdApp: App {
         // ✅ Validate API keys at launch
         AppConfig.validateConfiguration()
         
-        // Configure Firebase FIRST - but only here, not in FirebaseService
+        // Configure Firebase FIRST
         if FirebaseApp.app() == nil {
             FirebaseApp.configure()
         }
         
-        // Initialize FirebaseService to set up references
+        // Initialize FirebaseService
         _ = FirebaseService.shared
+        
+        // ✅ NEW: Start offline monitoring
+        _ = OfflineManager.shared
         
         // ✅ NEW: Perform security checks
         let result = SecurityService.shared.performSecurityChecks()
@@ -78,6 +81,12 @@ struct StashdApp: App {
                     if let currentUser = authService.currentUser {
                         Task {
                             try? await DataSyncService.shared.loadUserData(
+                                for: currentUser,
+                                modelContext: modelContainer.mainContext
+                            )
+                            
+                            // ✅ NEW: Schedule auto backup (encrypted)
+                            BackupService.shared.scheduleAutoBackup(
                                 for: currentUser,
                                 modelContext: modelContainer.mainContext
                             )

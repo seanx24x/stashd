@@ -84,6 +84,12 @@ struct FeedView: View {
                 destinationView(for: destination)
             }
             .toolbar {
+                // ✅ NEW: Add sync status on the left
+                ToolbarItem(placement: .topBarLeading) {
+                    SyncStatusView()
+                }
+                
+                // Existing filter button on the right
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         HapticManager.shared.selection()
