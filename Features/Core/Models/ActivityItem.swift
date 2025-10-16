@@ -5,11 +5,11 @@
 //  Created by Sean Lynch on 10/11/25.
 //
 
-
 // File: Core/Models/ActivityItem.swift
 
 import SwiftData
 import Foundation
+import FirebaseFirestore
 
 @Model
 final class ActivityItem {
@@ -73,5 +73,46 @@ enum ActivityType: String, Codable {
         case .comment: return "stashdAccent"
         case .mention: return "stashdPrimary"
         }
+    }
+}
+
+// MARK: - Firestore Conversion
+
+extension ActivityItem {
+    static func fromFirestore(_ data: [String: Any], id: String) throws -> ActivityItem {
+        guard let typeString = data["type"] as? String,
+              let type = ActivityType(rawValue: typeString) else {
+            throw SyncError.missingRequiredField("type")
+        }
+        
+        // Note: actor and recipient will need to be set separately
+        // after fetching from database, as they're relationships
+        // This creates a temporary activity that will be updated with relationships later
+        let tempActor = UserProfile(
+            firebaseUID: data["actorID"] as? String ?? "unknown",
+            username: "temp",
+            displayName: "Loading..."
+        )
+        
+        let tempRecipient = UserProfile(
+            firebaseUID: data["recipientID"] as? String ?? "unknown",
+            username: "temp",
+            displayName: "Loading..."
+        )
+        
+        let activity = ActivityItem(
+            id: UUID(uuidString: id) ?? UUID(),
+            type: type,
+            actor: tempActor,
+            recipient: tempRecipient
+        )
+        
+        activity.isRead = data["isRead"] as? Bool ?? false
+        
+        if let createdTimestamp = data["createdAt"] as? Timestamp {
+            activity.createdAt = createdTimestamp.dateValue()
+        }
+        
+        return activity
     }
 }

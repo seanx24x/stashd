@@ -139,17 +139,26 @@ final class DataEncryptionService {
         return true
     }
     
+    // MARK: - Decimal Encryption
+
     /// Encrypt Decimal values
-    func encrypt(_ decimal: Decimal) throws -> String {
+    func encryptDecimal(_ decimal: Decimal) throws -> Data {
         let string = "\(decimal)"
-        return try encrypt(string)
+        let encrypted = try encrypt(string)
+        guard let data = encrypted.data(using: .utf8) else {
+            throw DataEncryptionError.encryptionFailed
+        }
+        return data
     }
-    
+
     /// Decrypt to Decimal
-    func decryptToDecimal(_ encryptedString: String) throws -> Decimal {
+    func decryptToDecimal(_ encryptedData: Data) throws -> Decimal {
+        guard let encryptedString = String(data: encryptedData, encoding: .utf8) else {
+            throw DataEncryptionError.invalidData
+        }
         let string = try decrypt(encryptedString)
         guard let decimal = Decimal(string: string) else {
-            throw EncryptionError.invalidData
+            throw DataEncryptionError.invalidData
         }
         return decimal
     }

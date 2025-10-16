@@ -9,6 +9,7 @@
 
 import Foundation
 import SwiftData
+import FirebaseFirestore
 
 @Model
 final class CollectionModel {
@@ -51,7 +52,7 @@ final class CollectionModel {
             }
             
             do {
-                return try EncryptionService.shared.decryptToDecimal(encryptedData)
+                return try DataEncryptionService.shared.decryptToDecimal(encryptedData)
             } catch {
                 print("⚠️ Failed to decrypt estimated value: \(error)")
                 return 0
@@ -59,7 +60,7 @@ final class CollectionModel {
         }
         set {
             do {
-                _encryptedValue = try EncryptionService.shared.encryptDecimal(newValue)
+                _encryptedValue = try DataEncryptionService.shared.encryptDecimal(newValue)
             } catch {
                 print("⚠️ Failed to encrypt estimated value: \(error)")
                 _encryptedValue = nil
@@ -97,7 +98,7 @@ final class CollectionModel {
         
         // Encrypt the estimated value on init
         do {
-            self._encryptedValue = try EncryptionService.shared.encryptDecimal(estimatedValue)
+            self._encryptedValue = try DataEncryptionService.shared.encryptDecimal(estimatedValue)
         } catch {
             print("⚠️ Failed to encrypt initial estimated value: \(error)")
             self._encryptedValue = nil
@@ -131,5 +132,101 @@ extension CollectionModel {
             owner: owner,
             estimatedValue: 5000
         )
+    }
+}
+
+// MARK: - Firestore Conversion
+
+extension CollectionModel {
+    /// Create CollectionModel from Firestore data
+    static func fromFirestore(_ data: [String: Any], id: String) throws -> CollectionModel {
+        guard let title = data["title"] as? String,
+              let category = data["category"] as? String else {
+            throw SyncError.invalidData
+        }
+        
+        let collection = CollectionModel(
+            id: UUID(uuidString: id) ?? UUID(),
+            title: title,
+            description: data["description"] as? String,
+            category: CollectionCategory(rawValue: category) ?? .other,
+            coverImageURL: nil,
+            owner: nil, // Will be set later
+            isPublic: data["isPublic"] as? Bool ?? true,
+            estimatedValue: 0
+        )
+        
+        if let coverURLString = data["coverImageURL"] as? String {
+            collection.coverImageURL = URL(string: coverURLString)
+        }
+        
+        if let createdTimestamp = data["createdAt"] as? Timestamp {
+            collection.createdAt = createdTimestamp.dateValue()
+        }
+        
+        if let updatedTimestamp = data["updatedAt"] as? Timestamp {
+            collection.updatedAt = updatedTimestamp.dateValue()
+        }
+        
+        collection.itemCount = data["itemCount"] as? Int ?? 0
+        collection.viewCount = data["viewCount"] as? Int ?? 0
+        collection.likeCount = data["likeCount"] as? Int ?? 0
+        collection.commentCount = data["commentCount"] as? Int ?? 0
+        
+        if let totalValue = data["totalValue"] as? Double {
+            collection.totalValue = Decimal(totalValue)
+        }
+        
+        return collection
+    }
+    
+    /// Update collection from Firestore data
+    func updateFromFirestore(_ data: [String: Any]) {
+        if let title = data["title"] as? String {
+            self.title = title
+        }
+        
+        if let description = data["description"] as? String {
+            self.collectionDescription = description
+        }
+        
+        if let isPublic = data["isPublic"] as? Bool {
+            self.isPublic = isPublic
+        }
+        
+        if let coverURLString = data["coverImageURL"] as? String {
+            self.coverImageURL = URL(string: coverURLString)
+        }
+        
+        if let updatedTimestamp = data["updatedAt"] as? Timestamp {
+            self.updatedAt = updatedTimestamp.dateValue()
+        }
+        
+        if let itemCount = data["itemCount"] as? Int {
+            self.itemCount = itemCount
+        }
+        
+        if let totalValue = data["totalValue"] as? Double {
+            self.totalValue = Decimal(totalValue)
+        }
+    }
+}
+
+// MARK: - Sync Errors
+
+enum SyncError: LocalizedError {
+    case invalidData
+    case missingRequiredField(String)
+    case conversionFailed
+    
+    var errorDescription: String? {
+        switch self {
+        case .invalidData:
+            return "Invalid Firestore data"
+        case .missingRequiredField(let field):
+            return "Missing required field: \(field)"
+        case .conversionFailed:
+            return "Failed to convert Firestore data"
+        }
     }
 }
