@@ -21,6 +21,9 @@ struct AddItemView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showImagePicker = false
+    @State private var duplicateResult: DuplicateDetectionService.DuplicateResult?
+    @State private var showDuplicateWarning = false
+    @State private var isCheckingDuplicates = false
     
     @FocusState private var focusedField: Field?
     
@@ -73,8 +76,34 @@ struct AddItemView: View {
             .sheet(isPresented: $showImagePicker) {
                 MultiImagePicker(selectedImages: $selectedImages, maxSelection: 10)
             }
-            .overlay {
-                if isLoading {
+            .alert("Possible Duplicate Detected", isPresented: $showDuplicateWarning) {
+                Button("Add Anyway") {
+                    Task {
+                        await performAddItem()
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    isCheckingDuplicates = false
+                }
+            } message: {
+                if let result = duplicateResult {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(result.reason)
+                        Text("\nConfidence: \(Int(result.confidence))%")
+                        
+                        if !result.matchedItems.isEmpty {
+                            Text("\nSimilar items:")
+                            ForEach(result.matchedItems.prefix(3), id: \.id) { item in
+                                Text("• \(item.name)")
+                            }
+                        }
+                    }
+                } else {
+                    Text("This item may already exist in your collection.")
+                }
+            }
+            .overlay {  // ← ADD THIS
+                if isLoading || isCheckingDuplicates {
                     loadingOverlay
                 }
             }
@@ -383,7 +412,7 @@ struct AddItemView: View {
                     .tint(.white)
                     .scaleEffect(1.5)
                 
-                Text("Adding item...")
+                Text(isCheckingDuplicates ? "Checking for duplicates..." : "Adding item...")
                     .font(.bodyLarge)
                     .foregroundStyle(.white)
             }
@@ -391,51 +420,84 @@ struct AddItemView: View {
     }
     
     // MARK: - Actions
-    
+
     private func addItem() {
+        Task {
+            await checkForDuplicatesAndAdd()
+        }
+    }
+
+    private func checkForDuplicatesAndAdd() async {
+        isCheckingDuplicates = true
+        errorMessage = nil
+        
+        do {
+            // Check for duplicates first
+            let result = try await DuplicateDetectionService.shared.checkForDuplicates(
+                itemName: name,
+                itemDescription: itemDescription.isEmpty ? nil : itemDescription,
+                in: collection,
+                modelContext: modelContext
+            )
+            
+            duplicateResult = result
+            isCheckingDuplicates = false
+            
+            // If high confidence duplicate, show warning
+            if result.shouldWarn {
+                showDuplicateWarning = true
+            } else {
+                // No duplicate or low confidence, proceed with adding
+                await performAddItem()
+            }
+            
+        } catch {
+            isCheckingDuplicates = false
+            errorMessage = "Failed to check for duplicates: \(error.localizedDescription)"
+        }
+    }
+
+    private func performAddItem() async {
         isLoading = true
         errorMessage = nil
         
-        Task {
-            do {
-                // Save images
-                var imageURLs: [URL] = []
-                for (index, image) in selectedImages.enumerated() {
-                    if let url = try await saveItemImage(image, itemID: UUID().uuidString, index: index) {
-                        imageURLs.append(url)
-                    }
+        do {
+            // Save images
+            var imageURLs: [URL] = []
+            for (index, image) in selectedImages.enumerated() {
+                if let url = try await saveItemImage(image, itemID: UUID().uuidString, index: index) {
+                    imageURLs.append(url)
                 }
-                
-                // Create item
-                let item = CollectionItem(
-                    name: name,
-                    collection: collection,
-                    notes: itemDescription.isEmpty ? nil : itemDescription,
-                    condition: selectedCondition,
-                    purchaseDate: purchaseDate,
-                    imageURLs: imageURLs
-                )
-                
-                // ✅ FIX: Safely handle optional items array
-                item.displayOrder = collection.items?.count ?? 0
-                
-                // Set estimated value from either field (prioritize current value over purchase price)
-                if let valueEstimate = Decimal(string: estimatedValue) {
-                    item.estimatedValue = valueEstimate
-                } else if let purchaseValue = Decimal(string: purchasePrice) {
-                    // If no current value is set, use purchase price as estimated value
-                    item.estimatedValue = purchaseValue
-                }
-                
-                modelContext.insert(item)
-                try modelContext.save()
-                
-                isLoading = false
-                dismiss()
-            } catch {
-                isLoading = false
-                errorMessage = error.localizedDescription
             }
+            
+            // Create item
+            let item = CollectionItem(
+                name: name,
+                collection: collection,
+                notes: itemDescription.isEmpty ? nil : itemDescription,
+                condition: selectedCondition,
+                purchaseDate: purchaseDate,
+                imageURLs: imageURLs
+            )
+            
+            // Safely handle optional items array
+            item.displayOrder = collection.items?.count ?? 0
+            
+            // Set estimated value from either field
+            if let valueEstimate = Decimal(string: estimatedValue) {
+                item.estimatedValue = valueEstimate
+            } else if let purchaseValue = Decimal(string: purchasePrice) {
+                item.estimatedValue = purchaseValue
+            }
+            
+            modelContext.insert(item)
+            try modelContext.save()
+            
+            isLoading = false
+            dismiss()
+        } catch {
+            isLoading = false
+            errorMessage = error.localizedDescription
         }
     }
     
