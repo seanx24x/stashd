@@ -270,6 +270,9 @@ struct ExploreView: View {
         case .collectionDetail(let collectionID):
             CollectionDetailViewLoader(collectionID: collectionID)
             
+        case .pricePrediction(let itemID):
+            PricePredictionViewLoader(itemID: itemID)
+            
         case .userProfile(let userID):
             UserProfileView(userID: userID)
             

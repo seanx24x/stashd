@@ -245,6 +245,9 @@ struct ProfileView: View {
             
         case .categoryBrowse(let category):
             Text("Browse \(category.rawValue)")
+            
+        case .pricePrediction(let itemID):  // ✅ ADD THIS
+            PricePredictionViewLoader(itemID: itemID)
         }
     }
 }

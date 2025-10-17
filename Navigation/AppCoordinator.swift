@@ -5,9 +5,6 @@
 //  Created by Sean Lynch on 10/9/25.
 //
 
-
-// File: Navigation/AppCoordinator.swift
-
 import SwiftUI
 import Observation
 
@@ -46,6 +43,7 @@ enum NavigationDestination: Hashable {
     case editCollection(UUID)
     case settings
     case categoryBrowse(CollectionCategory)
+    case pricePrediction(UUID)  // ✅ THIS SHOULD BE HERE
 }
 
 enum SheetDestination: Identifiable {

@@ -1,3 +1,10 @@
+//
+//  NavigationLoaders.swift
+//  stashd
+//
+//  Created by Sean Lynch
+//
+
 import SwiftUI
 import SwiftData
 
@@ -45,6 +52,30 @@ struct ItemDetailViewLoader: View {
                 "Item Not Found",
                 systemImage: "exclamationmark.triangle",
                 description: Text("This item could not be found.")
+            )
+        }
+    }
+}
+
+// MARK: - Price Prediction Loader
+
+struct PricePredictionViewLoader: View {
+    let itemID: UUID
+    @Environment(\.modelContext) private var modelContext
+    @Query private var allItems: [CollectionItem]
+    
+    private var item: CollectionItem? {
+        allItems.first { $0.id == itemID }
+    }
+    
+    var body: some View {
+        if let item {
+            PricePredictionView(item: item)
+        } else {
+            ContentUnavailableView(
+                "Item Not Found",
+                systemImage: "questionmark.circle",
+                description: Text("This item could not be loaded")
             )
         }
     }

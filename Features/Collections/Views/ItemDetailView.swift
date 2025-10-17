@@ -14,6 +14,7 @@ struct ItemDetailView: View {
     let item: CollectionItem
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(AppCoordinator.self) private var coordinator
     
     @State private var showPriceCheck = false
     @State private var showDeleteAlert = false
@@ -200,6 +201,22 @@ struct ItemDetailView: View {
                                 )
                             )
                             .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
+                        }
+                        .buttonStyle(.plain)
+                        
+                        // Price Prediction Button
+                        Button {
+                            HapticManager.shared.light()
+                            // Navigate to prediction view
+                            coordinator.navigate(to: .pricePrediction(item.id))
+                        } label: {
+                            Label("Price Prediction", systemImage: "chart.line.uptrend.xyaxis")
+                                .font(.bodyMedium.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(Spacing.medium)
+                                .background(Color.stashdPrimary)
+                                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
                         }
                         .buttonStyle(.plain)
                         
