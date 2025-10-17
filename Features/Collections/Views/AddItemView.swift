@@ -7,6 +7,16 @@ import PhotosUI
 struct AddItemView: View {
     let collection: CollectionModel
     
+    var body: some View {
+        AddItemOptionsSheet(collection: collection)
+    }
+}
+
+// MARK: - Manual Add Item View
+
+struct ManualAddItemView: View {
+    let collection: CollectionModel
+    
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     
@@ -249,7 +259,6 @@ struct AddItemView: View {
             )
             .focused($focusedField, equals: .name)
             .onChange(of: name) { oldValue, newValue in
-                // Auto-generate tags when name changes
                 if !newValue.isEmpty && newValue.count >= 3 {
                     Task {
                         await generateTagSuggestions()
@@ -259,10 +268,7 @@ struct AddItemView: View {
             
             descriptionField
             conditionPicker
-            
-            // Tag suggestions section
             tagSuggestionsSection
-            
             priceFields
             dateAcquiredPicker
         }
@@ -363,7 +369,6 @@ struct AddItemView: View {
                 }
             }
             
-            // Selected tags
             if !selectedTags.isEmpty {
                 FlowLayout(spacing: Spacing.small) {
                     ForEach(selectedTags, id: \.self) { tag in
@@ -387,7 +392,6 @@ struct AddItemView: View {
                 }
             }
 
-            // Suggested tags
             if !suggestedTags.isEmpty {
                 VStack(alignment: .leading, spacing: Spacing.xSmall) {
                     Text("Suggested")
@@ -519,7 +523,6 @@ struct AddItemView: View {
         errorMessage = nil
         
         do {
-            // Check for duplicates first
             let result = try await DuplicateDetectionService.shared.checkForDuplicates(
                 itemName: name,
                 itemDescription: itemDescription.isEmpty ? nil : itemDescription,
@@ -530,11 +533,9 @@ struct AddItemView: View {
             duplicateResult = result
             isCheckingDuplicates = false
             
-            // If high confidence duplicate, show warning
             if result.shouldWarn {
                 showDuplicateWarning = true
             } else {
-                // No duplicate or low confidence, proceed with adding
                 await performAddItem()
             }
             
@@ -549,7 +550,6 @@ struct AddItemView: View {
         errorMessage = nil
         
         do {
-            // Save images
             var imageURLs: [URL] = []
             for (index, image) in selectedImages.enumerated() {
                 if let url = try await saveItemImage(image, itemID: UUID().uuidString, index: index) {
@@ -557,10 +557,8 @@ struct AddItemView: View {
                 }
             }
             
-            // ✅ FIX: Parse price values correctly (divide by 100 if needed)
             let purchasePriceValue: Decimal?
             if !purchasePrice.isEmpty, let value = Decimal(string: purchasePrice) {
-                // Check if value seems to be in cents (> 1000 suggests cents)
                 purchasePriceValue = value > 1000 ? value / 100 : value
             } else {
                 purchasePriceValue = nil
@@ -568,13 +566,11 @@ struct AddItemView: View {
             
             let estimatedValueValue: Decimal?
             if !estimatedValue.isEmpty, let value = Decimal(string: estimatedValue) {
-                // Check if value seems to be in cents (> 1000 suggests cents)
                 estimatedValueValue = value > 1000 ? value / 100 : value
             } else {
                 estimatedValueValue = nil
             }
             
-            // Create item
             let item = CollectionItem(
                 name: name,
                 collection: collection,
@@ -587,7 +583,6 @@ struct AddItemView: View {
                 tags: selectedTags
             )
             
-            // Safely handle optional items array
             item.displayOrder = collection.items?.count ?? 0
             
             modelContext.insert(item)
@@ -663,24 +658,4 @@ struct AddItemView: View {
         try imageData.write(to: fileURL)
         return fileURL
     }
-}
-
-#Preview {
-    let config = ModelConfiguration(isStoredInMemoryOnly: true)
-    let container = try! ModelContainer(for: CollectionModel.self, configurations: config)
-    
-    let user = UserProfile(
-        firebaseUID: "preview",
-        username: "johndoe",
-        displayName: "John Doe"
-    )
-    
-    let collection = CollectionModel(
-        title: "My Vinyl Collection",
-        category: .vinyl,
-        owner: user
-    )
-    
-    return AddItemView(collection: collection)
-        .modelContainer(container)
 }

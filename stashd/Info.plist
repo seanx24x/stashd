@@ -4,6 +4,15 @@
 <dict>
     <key>NSFaceIDUsageDescription</key>
     <string>Stashd uses Face ID to protect your collections and sensitive data</string>
+    
+    <!-- ADD THESE THREE LINES -->
+    <key>NSCameraUsageDescription</key>
+    <string>stashd needs access to your camera to scan and identify items in your collection.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>stashd needs access to your photo library to add photos of your collectibles.</string>
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>stashd needs access to save photos of your collectibles.</string>
+    
     <key>UIBackgroundModes</key>
     <array>
         <string>remote-notification</string>
