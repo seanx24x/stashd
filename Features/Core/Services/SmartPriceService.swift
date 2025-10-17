@@ -10,11 +10,21 @@ import SwiftData
 
 // MARK: - Price Source Types
 
-enum PriceSourceType {
+enum PriceSourceType: Equatable {
     case manufacturer(ManufacturerSource)
     case retailer(RetailerSource)
     case marketplace(MarketplaceSource)
     case specialty(SpecialtySource)
+    
+    static func == (lhs: PriceSourceType, rhs: PriceSourceType) -> Bool {
+        switch (lhs, rhs) {
+        case (.manufacturer(let a), .manufacturer(let b)): return a == b
+        case (.retailer(let a), .retailer(let b)): return a == b
+        case (.marketplace(let a), .marketplace(let b)): return a == b
+        case (.specialty(let a), .specialty(let b)): return a == b
+        default: return false
+        }
+    }
 }
 
 enum ManufacturerSource: String {
@@ -132,99 +142,180 @@ final class SmartPriceService {
     
     private init() {}
     
-    // MARK: - Get Price Sources
+    // MARK: - Get Price Sources (AI-Powered Universal)
     
-    func determineSources(for item: CollectionItem) -> [PriceSourceType] {
-        let collection = item.collection  // ✅ FIX: No unwrapping needed
+    func determineSources(for item: CollectionItem) async throws -> [PriceSourceType] {
+        let collection = item.collection
         let category = collection.categoryEnum
-        let itemName = item.name.lowercased()
+        let itemName = item.name
         
-        switch category {
-        case .sneakers:
-            return [
-                .manufacturer(detectShoeBrand(itemName)),
-                .specialty(.stockX),
-                .specialty(.goat),
-                .marketplace(.ebay)
-            ]
-            
-        case .toys where itemName.contains("warhammer"):
-            return [
-                .manufacturer(.warhammer),
-                .retailer(.amazon),
-                .marketplace(.ebay)
-            ]
-            
-        case .toys where itemName.contains("lego"):
-            return [
-                .manufacturer(.lego),
-                .retailer(.amazon),
-                .retailer(.target),
-                .marketplace(.ebay)
-            ]
-            
-        case .toys where itemName.contains("funko"):
-            return [
-                .manufacturer(.funko),
-                .retailer(.amazon),
-                .marketplace(.ebay)
-            ]
-            
-        case .tradingCards, .pokemonCards, .sportsCards:
-            return [
-                .specialty(.tcgPlayer),
-                .marketplace(.ebay),
-                .retailer(.amazon)
-            ]
-            
-        case .comics:
-            return [
-                .specialty(.cgc),
-                .marketplace(.ebay),
-                .retailer(.amazon)
-            ]
-            
-        case .videoGames:
-            return [
-                .specialty(.priceCharting),
-                .retailer(.gameStop),
-                .marketplace(.ebay)
-            ]
-            
-        case .vinyl:
-            return [
-                .specialty(.vinylMe),
-                .retailer(.amazon),
-                .marketplace(.ebay)
-            ]
-            
-        case .movies, .books:
-            return [
-                .retailer(.amazon),
-                .retailer(.bestBuy),
-                .marketplace(.ebay)
-            ]
-            
-        default:
-            return [
-                .retailer(.amazon),
-                .marketplace(.ebay)
-            ]
+        print("🤖 Using AI to determine best price sources for: \(itemName)")
+        
+        // Use AI to identify manufacturer and suggest sources
+        let aiSources = try await identifySourcesWithAI(itemName: itemName, category: category.rawValue)
+        
+        // Always include eBay as fallback
+        var sources = aiSources
+        if !sources.contains(where: { if case .marketplace(.ebay) = $0 { return true }; return false }) {
+            sources.append(.marketplace(.ebay))
         }
+        
+        return sources
     }
     
+    // MARK: - AI Source Identification
+    
+    private func identifySourcesWithAI(itemName: String, category: String) async throws -> [PriceSourceType] {
+        let prompt = """
+        Identify the best price sources for this collectible item:
+        
+        Item: \(itemName)
+        Category: \(category)
+        
+        Determine:
+        1. The manufacturer/brand (if applicable)
+        2. The best retail sources
+        3. The best specialty marketplaces
+        
+        Return JSON:
+        {
+            "manufacturer": "Games Workshop" or null,
+            "retailers": ["Amazon", "Target"],
+            "specialty": ["StockX", "TCGPlayer"]
+        }
+        
+        Available manufacturers: Nike, Adidas, Games Workshop, LEGO, Funko, Hasbro, Mattel, Pokémon Company
+        Available retailers: Amazon, Walmart, Target, Best Buy, GameStop
+        Available specialty: StockX, GOAT, TCGPlayer, Cardmarket, PriceCharting, CGC Comics, VinylMe
+        
+        If manufacturer not in list or unknown, set to null.
+        Be smart about identifying brands from product names.
+        """
+        
+        let url = URL(string: "https://api.openai.com/v1/chat/completions")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.addValue("Bearer \(AppConfig.openAIAPIKey)", forHTTPHeaderField: "Authorization")
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let requestBody: [String: Any] = [
+            "model": "gpt-4o-mini",
+            "messages": [
+                ["role": "system", "content": "You are a product identification expert. Return only valid JSON."],
+                ["role": "user", "content": prompt]
+            ],
+            "max_tokens": 300,
+            "temperature": 0.3
+        ]
+        
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        
+        let (data, _) = try await URLSession.shared.data(for: request)
+        
+        var sources: [PriceSourceType] = []
+        
+        if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let choices = json["choices"] as? [[String: Any]],
+           let firstChoice = choices.first,
+           let message = firstChoice["message"] as? [String: Any],
+           let content = message["content"] as? String {
+            
+            print("🤖 AI source identification response: \(content)")
+            
+            let cleaned = content
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "```json", with: "")
+                .replacingOccurrences(of: "```", with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            if let jsonData = cleaned.data(using: .utf8),
+               let result = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
+                
+                // Parse manufacturer
+                if let manufacturerName = result["manufacturer"] as? String,
+                   !manufacturerName.isEmpty,
+                   manufacturerName.lowercased() != "null" {
+                    if let manufacturer = parseManufacturer(manufacturerName) {
+                        sources.append(.manufacturer(manufacturer))
+                        print("✅ Manufacturer identified: \(manufacturerName)")
+                    }
+                }
+                
+                // Parse retailers
+                if let retailers = result["retailers"] as? [String] {
+                    for retailerName in retailers {
+                        if let retailer = parseRetailer(retailerName) {
+                            sources.append(.retailer(retailer))
+                        }
+                    }
+                }
+                
+                // Parse specialty
+                if let specialty = result["specialty"] as? [String] {
+                    for specialtyName in specialty {
+                        if let specialtySite = parseSpecialty(specialtyName) {
+                            sources.append(.specialty(specialtySite))
+                        }
+                    }
+                }
+            }
+        }
+        
+        print("📊 AI determined \(sources.count) sources")
+        return sources
+    }
+    
+    // MARK: - Parse Helper Functions
+    
+    private func parseManufacturer(_ name: String) -> ManufacturerSource? {
+        let normalized = name.lowercased()
+        if normalized.contains("games workshop") || normalized.contains("warhammer") {
+            return .warhammer
+        }
+        if normalized.contains("nike") { return .nike }
+        if normalized.contains("adidas") { return .adidas }
+        if normalized.contains("lego") { return .lego }
+        if normalized.contains("funko") { return .funko }
+        if normalized.contains("hasbro") { return .hasbro }
+        if normalized.contains("mattel") { return .mattel }
+        if normalized.contains("pokémon") || normalized.contains("pokemon") { return .pokemon }
+        return nil
+    }
+    
+    private func parseRetailer(_ name: String) -> RetailerSource? {
+        let normalized = name.lowercased()
+        if normalized.contains("amazon") { return .amazon }
+        if normalized.contains("walmart") { return .walmart }
+        if normalized.contains("target") { return .target }
+        if normalized.contains("best buy") { return .bestBuy }
+        if normalized.contains("gamestop") { return .gameStop }
+        return nil
+    }
+    
+    private func parseSpecialty(_ name: String) -> SpecialtySource? {
+        let normalized = name.lowercased()
+        if normalized.contains("stockx") { return .stockX }
+        if normalized.contains("goat") { return .goat }
+        if normalized.contains("tcgplayer") || normalized.contains("tcg") { return .tcgPlayer }
+        if normalized.contains("cardmarket") { return .cardMarket }
+        if normalized.contains("pricecharting") { return .priceCharting }
+        if normalized.contains("cgc") { return .cgc }
+        if normalized.contains("vinylme") { return .vinylMe }
+        return nil
+    }
+
     // MARK: - Fetch Multi-Source Prices
 
     func fetchPrices(for item: CollectionItem) async throws -> MultiSourcePriceResult {
         
-        print("🚨🚨🚨 NEW SMARTPRICESERVICE IS RUNNING 🚨🚨🚨")
+        print("🚨🚨🚨 NEW AI-POWERED SMARTPRICESERVICE IS RUNNING 🚨🚨🚨")
         
-        let sources = determineSources(for: item)
+        // ✅ NOW ASYNC
+        let sources = try await determineSources(for: item)
         
         print("🔍 Fetching prices for: \(item.name)")
         print("📊 Sources to check: \(sources.count)")
         
-
         for source in sources {
             print("   - \(sourceDescription(source))")
         }
@@ -315,31 +406,43 @@ final class SmartPriceService {
     // MARK: - Source-Specific Fetchers
     
     private func fetchFromManufacturer(_ manufacturer: ManufacturerSource, item: CollectionItem) async throws -> [PriceInfo] {
-        // For now, use AI to estimate MSRP
-        // Later we can add web scraping for specific manufacturers
-        let estimatedMSRP = try await estimateMSRP(item: item, manufacturer: manufacturer)
-        
-        return [
-            PriceInfo(
-                source: manufacturer.rawValue,
-                sourceType: "MSRP",
-                price: estimatedMSRP,
-                url: manufacturer.baseURL,
-                availability: "Check Official Store",
-                condition: "New",
-                lastUpdated: Date()
-            )
-        ]
+        do {
+            let estimatedMSRP = try await estimateMSRP(item: item, manufacturer: manufacturer)
+            
+            return [
+                PriceInfo(
+                    source: manufacturer.rawValue,
+                    sourceType: "MSRP",
+                    price: estimatedMSRP,
+                    url: manufacturer.baseURL,
+                    availability: "In Stock at Official Store",
+                    condition: "New",
+                    lastUpdated: Date()
+                )
+            ]
+        } catch {
+            // ✅ GRACEFUL FALLBACK: Show manufacturer card with link
+            print("ℹ️ MSRP unavailable, showing manufacturer info card")
+            return [
+                PriceInfo(
+                    source: manufacturer.rawValue,
+                    sourceType: "Official Retailer",
+                    price: 0, // Special: 0 = show "Visit Store" instead
+                    url: manufacturer.baseURL,
+                    availability: "Check for current pricing",
+                    condition: "New",
+                    lastUpdated: Date()
+                )
+            ]
+        }
     }
     
     private func fetchFromRetailer(_ retailer: RetailerSource, item: CollectionItem) async throws -> [PriceInfo] {
-        // Use AI to search and extract prices
-        // For MVP, we'll estimate based on MSRP + typical markup
+        // Future: Implement retailer scraping
         return []
     }
     
     private func fetchFromMarketplace(_ marketplace: MarketplaceSource, item: CollectionItem) async throws -> [PriceInfo] {
-        // Use existing eBay service for eBay
         if marketplace == .ebay {
             return try await fetchFromEbay(item: item)
         }
@@ -347,11 +450,11 @@ final class SmartPriceService {
     }
     
     private func fetchFromSpecialty(_ specialty: SpecialtySource, item: CollectionItem) async throws -> [PriceInfo] {
-        // Specialty sites - will implement based on priority
+        // Future: Implement specialty site scraping
         return []
     }
     
-    // MARK: - eBay Integration (Existing)
+    // MARK: - eBay Integration
     
     private func fetchFromEbay(item: CollectionItem) async throws -> [PriceInfo] {
         let ebayResults = try await eBayService.shared.searchItem(
@@ -377,36 +480,58 @@ final class SmartPriceService {
     private func estimateMSRP(item: CollectionItem, manufacturer: ManufacturerSource) async throws -> Decimal {
         print("🔍 Looking up real MSRP for: \(item.name)")
         
-        do {
-            // Step 1: Search for the product URL
-            guard let productURL = try await WebScraperService.shared.searchProductURL(
-                productName: item.name,
-                manufacturer: manufacturer.rawValue,
-                manufacturerURL: manufacturer.baseURL
-            ) else {
-                print("⚠️ Could not find product URL")
-                throw SmartPriceError.estimationFailed
+        // ✅ Try up to 2 times
+        for attempt in 1...2 {
+            do {
+                print("🔄 Attempt \(attempt)/2")
+                
+                // Step 1: Search for the product URL
+                guard let productURL = try await WebScraperService.shared.searchProductURL(
+                    productName: item.name,
+                    manufacturer: manufacturer.rawValue,
+                    manufacturerURL: manufacturer.baseURL
+                ) else {
+                    print("⚠️ Could not find product URL")
+                    if attempt < 2 {
+                        print("🔄 Retrying...")
+                        try await Task.sleep(nanoseconds: 2_000_000_000)
+                        continue
+                    }
+                    throw SmartPriceError.estimationFailed
+                }
+                
+                // Step 2: Fetch the HTML
+                let html = try await WebScraperService.shared.fetchHTML(from: productURL)
+                
+                // Step 3: Extract price using AI
+                if let price = try await WebScraperService.shared.extractPrice(
+                    from: html,
+                    productName: item.name
+                ) {
+                    print("✅ Found real MSRP: $\(price)")
+                    return price
+                }
+                
+                print("⚠️ Could not extract price from page")
+                
+                if attempt < 2 {
+                    print("🔄 Retrying...")
+                    try await Task.sleep(nanoseconds: 2_000_000_000)
+                }
+                
+            } catch {
+                print("❌ Attempt \(attempt) failed: \(error.localizedDescription)")
+                
+                if attempt < 2 {
+                    print("🔄 Retrying in 2 seconds...")
+                    try await Task.sleep(nanoseconds: 2_000_000_000)
+                } else {
+                    throw error
+                }
             }
-            
-            // Step 2: Fetch the HTML
-            let html = try await WebScraperService.shared.fetchHTML(from: productURL)
-            
-            // Step 3: Extract price using AI
-            if let price = try await WebScraperService.shared.extractPrice(
-                from: html,
-                productName: item.name
-            ) {
-                print("✅ Found real MSRP: $\(price)")
-                return price
-            }
-            
-            print("⚠️ Could not extract price from page")
-            throw SmartPriceError.estimationFailed
-            
-        } catch {
-            print("❌ MSRP lookup failed: \(error.localizedDescription)")
-            throw error
         }
+        
+        throw SmartPriceError.estimationFailed
     }
     
     // MARK: - AI Recommendation
@@ -502,15 +627,6 @@ final class SmartPriceService {
             reasoning: "Based on average of available prices.",
             confidence: 70
         )
-    }
-    
-    // MARK: - Brand Detection
-    
-    private func detectShoeBrand(_ itemName: String) -> ManufacturerSource {
-        let name = itemName.lowercased()
-        if name.contains("nike") || name.contains("jordan") { return .nike }
-        if name.contains("adidas") || name.contains("yeezy") { return .adidas }
-        return .other
     }
     
     private func sourceDescription(_ source: PriceSourceType) -> String {

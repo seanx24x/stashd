@@ -5,14 +5,6 @@
 //  Created by Sean Lynch on 10/17/25.
 //
 
-
-//
-//  WebScraperService.swift
-//  stashd
-//
-//  Created by Sean Lynch
-//
-
 import Foundation
 
 @MainActor
@@ -22,7 +14,7 @@ final class WebScraperService {
     private init() {}
     
     // MARK: - Search for Product URL
-    
+
     func searchProductURL(
         productName: String,
         manufacturer: String,
@@ -31,27 +23,36 @@ final class WebScraperService {
         
         print("🔍 Searching for: \(productName) on \(manufacturer)")
         
-        // Use AI to search Google and find the official product page
-        let searchQuery = "\(productName) \(manufacturer) site:\(manufacturerURL)"
-        
+        // Use OpenAI with web browsing capability or better prompting
         let prompt = """
-        I need to find the official product page for this item:
+        I need to find the EXACT product page URL for this item on the official manufacturer website.
         
         Product: \(productName)
         Manufacturer: \(manufacturer)
         Official Site: \(manufacturerURL)
         
-        Search query: "\(searchQuery)"
+        Think step by step:
+        1. What is the full product name with model/SKU if identifiable?
+        2. What would be the likely URL structure for this manufacturer?
+        3. Construct the most likely direct product page URL.
         
-        Based on your knowledge, what would be the most likely official product URL?
-        Return ONLY the URL, nothing else.
+        For Games Workshop products, the URL format is typically:
+        https://www.warhammer.com/en-US/shop/[product-category]/[product-name-with-hyphens]
         
-        If uncertain, return the manufacturer's main shop URL.
+        For Nike products:
+        https://www.nike.com/t/[product-slug]/[sku]
+        
+        Return ONLY the most specific product URL you can construct.
+        If you cannot determine the exact URL, return the category/search page that would contain this product.
+        
+        Do NOT return the homepage or main shop page.
         
         Examples of good responses:
-        - https://www.warhammer.com/en-US/shop/Space-Marine-Captain
-        - https://www.nike.com/t/air-jordan-1-retro-high
+        - https://www.warhammer.com/en-US/shop/Space-Marines-Execrator-2024
+        - https://www.nike.com/t/air-jordan-1-retro-high-og/555088-134
         - https://www.lego.com/en-us/product/millennium-falcon-75192
+        
+        Return ONLY the URL, nothing else.
         """
         
         let url = URL(string: "https://api.openai.com/v1/chat/completions")!
@@ -61,19 +62,19 @@ final class WebScraperService {
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         
         let requestBody: [String: Any] = [
-            "model": "gpt-4o",
+            "model": "gpt-4o", // ✅ Use GPT-4o for better reasoning
             "messages": [
                 [
                     "role": "system",
-                    "content": "You are a web search assistant. Return only URLs."
+                    "content": "You are an expert at finding product URLs on manufacturer websites. Return only the most specific product URL possible."
                 ],
                 [
                     "role": "user",
                     "content": prompt
                 ]
             ],
-            "max_tokens": 200,
-            "temperature": 0.3
+            "max_tokens": 300,
+            "temperature": 0.1 // ✅ Lower temperature for more precise URLs
         ]
         
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
@@ -88,6 +89,14 @@ final class WebScraperService {
             
             let urlString = content.trimmingCharacters(in: .whitespacesAndNewlines)
             print("🔗 Found URL: \(urlString)")
+            
+            // ✅ Validate it's not just the homepage
+            if urlString.hasSuffix("/shop") || urlString.hasSuffix("/shop/") ||
+               urlString == manufacturerURL || urlString == "\(manufacturerURL)/" {
+                print("⚠️ AI returned generic shop page, will try search fallback")
+                return nil
+            }
+            
             return urlString
         }
         
@@ -104,22 +113,75 @@ final class WebScraperService {
         }
         
         var request = URLRequest(url: url)
-        request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)", forHTTPHeaderField: "User-Agent")
-        request.timeoutInterval = 15
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        // ✅ Add realistic browser headers to avoid blocking
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
+        request.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
+        request.setValue("keep-alive", forHTTPHeaderField: "Connection")
+        request.setValue("1", forHTTPHeaderField: "Upgrade-Insecure-Requests")
         
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200 else {
-            throw WebScraperError.fetchFailed
+        // ✅ Add cache control
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        
+        // ✅ Longer timeout for slow sites
+        request.timeoutInterval = 30
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw WebScraperError.fetchFailed
+            }
+            
+            print("📥 Response status: \(httpResponse.statusCode)")
+            
+            // ✅ Handle different status codes
+            switch httpResponse.statusCode {
+            case 200:
+                break // Success!
+            case 301, 302, 303, 307, 308:
+                // Follow redirects manually if needed
+                if let location = httpResponse.allHeaderFields["Location"] as? String {
+                    print("↪️ Following redirect to: \(location)")
+                    return try await fetchHTML(from: location)
+                }
+                throw WebScraperError.fetchFailed
+            case 403:
+                print("❌ 403 Forbidden - Site is blocking scrapers")
+                throw WebScraperError.blocked
+            case 404:
+                print("❌ 404 Not Found - URL doesn't exist")
+                throw WebScraperError.notFound
+            case 429:
+                print("❌ 429 Rate Limited - Too many requests")
+                throw WebScraperError.rateLimited
+            default:
+                print("❌ Unexpected status code: \(httpResponse.statusCode)")
+                throw WebScraperError.fetchFailed
+            }
+            
+            guard let html = String(data: data, encoding: .utf8) else {
+                throw WebScraperError.invalidHTML
+            }
+            
+            print("✅ Fetched HTML (\(html.count) characters)")
+            
+            // ✅ Check if we got a valid page (not error/login page)
+            if html.contains("Access Denied") || html.contains("Forbidden") {
+                print("⚠️ Got access denied page")
+                throw WebScraperError.blocked
+            }
+            
+            return html
+            
+        } catch let error as WebScraperError {
+            throw error
+        } catch {
+            print("❌ Network error: \(error.localizedDescription)")
+            throw WebScraperError.networkError(error.localizedDescription)
         }
-        
-        guard let html = String(data: data, encoding: .utf8) else {
-            throw WebScraperError.invalidHTML
-        }
-        
-        print("✅ Fetched HTML (\(html.count) characters)")
-        return html
     }
     
     // MARK: - Extract Price from HTML using AI
@@ -261,6 +323,10 @@ enum WebScraperError: LocalizedError {
     case fetchFailed
     case invalidHTML
     case extractionFailed
+    case blocked
+    case notFound
+    case rateLimited
+    case networkError(String)
     
     var errorDescription: String? {
         switch self {
@@ -268,6 +334,10 @@ enum WebScraperError: LocalizedError {
         case .fetchFailed: return "Failed to fetch webpage"
         case .invalidHTML: return "Invalid HTML content"
         case .extractionFailed: return "Could not extract price from page"
+        case .blocked: return "Website blocked scraping attempt"
+        case .notFound: return "Product page not found"
+        case .rateLimited: return "Too many requests - try again later"
+        case .networkError(let msg): return "Network error: \(msg)"
         }
     }
 }
