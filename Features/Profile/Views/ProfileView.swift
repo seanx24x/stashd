@@ -12,6 +12,10 @@ struct ProfileView: View {
     private var allCollections: [CollectionModel]
     
     @State private var showSettings = false
+    @State private var nlSearchText = ""
+    @State private var isNLSearching = false
+    @State private var nlSearchResults: [CollectionItem] = []
+    @State private var showNLResults = false
     
     private var userCollections: [CollectionModel] {
         guard let currentUser = authService.currentUser else { return [] }
@@ -27,6 +31,27 @@ struct ProfileView: View {
                     // Profile Header
                     if let currentUser = authService.currentUser {
                         ProfileHeaderView(user: currentUser)
+                    }
+                    
+                    // ✅ NATURAL LANGUAGE SEARCH
+                    VStack(alignment: .leading, spacing: Spacing.small) {
+                        Text("Ask about your collection")
+                            .font(.labelMedium)
+                            .foregroundStyle(.textSecondary)
+                            .padding(.horizontal, Spacing.large)
+                        
+                        NaturalLanguageSearchBar(
+                            searchText: $nlSearchText,
+                            isSearching: $isNLSearching,
+                            placeholder: "e.g., 'Show expensive Nike sneakers'",
+                            onSearch: performNLSearch
+                        )
+                        .padding(.horizontal, Spacing.large)
+                    }
+                    
+                    // ✅ SHOW NL SEARCH RESULTS IF ACTIVE
+                    if showNLResults {
+                        nlSearchResultsSection
                     }
                     
                     // Collections Section
@@ -70,12 +95,12 @@ struct ProfileView: View {
                 destinationView(for: destination)
             }
             .toolbar {
-                // ✅ NEW: Add sync status on the left
+                // Sync status on the left
                 ToolbarItem(placement: .topBarLeading) {
                     SyncStatusView()
                 }
                 
-                // Existing settings button on the right
+                // Settings button on the right
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         HapticManager.shared.selection()
@@ -90,6 +115,114 @@ struct ProfileView: View {
                 SettingsView()
             }
         }
+    }
+    
+    // ✅ NL SEARCH RESULTS SECTION
+    private var nlSearchResultsSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.medium) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Search Results")
+                        .font(.headlineSmall.weight(.semibold))
+                        .foregroundStyle(.textPrimary)
+                    
+                    Text("\(nlSearchResults.count) items found")
+                        .font(.labelSmall)
+                        .foregroundStyle(.textSecondary)
+                }
+                
+                Spacer()
+                
+                Button {
+                    HapticManager.shared.light()
+                    clearNLSearch()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.caption)
+                        Text("Clear")
+                            .font(.labelMedium)
+                    }
+                    .foregroundStyle(Color.stashdPrimary)
+                }
+            }
+            .padding(.horizontal, Spacing.large)
+            
+            if nlSearchResults.isEmpty {
+                VStack(spacing: Spacing.medium) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 48))
+                        .foregroundStyle(.textTertiary)
+                    
+                    Text("No items match your search")
+                        .font(.bodyLarge)
+                        .foregroundStyle(.textSecondary)
+                    
+                    Text("Try different keywords or filters")
+                        .font(.bodySmall)
+                        .foregroundStyle(.textTertiary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.xLarge)
+            } else {
+                LazyVStack(spacing: Spacing.medium) {
+                    ForEach(nlSearchResults) { item in
+                        NavigationLink(destination: ItemDetailView(item: item)) {
+                            ItemRowCard(item: item)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, Spacing.large)
+            }
+        }
+    }
+    
+    // ✅ NL SEARCH ACTIONS
+    private func performNLSearch() {
+        guard !nlSearchText.isEmpty else { return }
+        
+        Task {
+            isNLSearching = true
+            
+            do {
+                print("🔍 Starting NL search: '\(nlSearchText)'")
+                
+                // Parse natural language query
+                let query = try await NaturalLanguageSearchService.shared.parseQuery(nlSearchText)
+                
+                // Execute search across all user's collections
+                let results = NaturalLanguageSearchService.shared.search(
+                    query: query,
+                    in: userCollections,
+                    context: modelContext
+                )
+                
+                await MainActor.run {
+                    nlSearchResults = results
+                    showNLResults = true
+                    isNLSearching = false
+                    HapticManager.shared.success()
+                }
+                
+                print("✅ NL Search complete: \(results.count) items found")
+                
+            } catch {
+                await MainActor.run {
+                    isNLSearching = false
+                    showNLResults = true
+                    nlSearchResults = []
+                    HapticManager.shared.error()
+                }
+                print("❌ NL Search failed: \(error)")
+            }
+        }
+    }
+    
+    private func clearNLSearch() {
+        nlSearchText = ""
+        nlSearchResults = []
+        showNLResults = false
     }
     
     @ViewBuilder
@@ -187,7 +320,7 @@ struct ProfileCollectionCard: View {
     
     var body: some View {
         HStack(spacing: Spacing.medium) {
-            // ✅ FIXED: Cover Image with new CachedAsyncImage
+            // Cover Image
             if let coverURL = collection.coverImageURL {
                 CachedAsyncImage(url: coverURL)
                     .scaledToFill()
@@ -198,7 +331,6 @@ struct ProfileCollectionCard: View {
                     .fill(Color.surfaceElevated)
                     .frame(width: 80, height: 80)
                     .overlay {
-                        // ✅ FIXED: Use categoryEnum instead of category
                         Image(systemName: collection.categoryEnum.iconName)
                             .font(.title)
                             .foregroundStyle(.textTertiary)
@@ -213,7 +345,6 @@ struct ProfileCollectionCard: View {
                     .foregroundStyle(.textPrimary)
                     .lineLimit(2)
                 
-                // ✅ FIXED: Use categoryEnum
                 Label(collection.categoryEnum.rawValue, systemImage: collection.categoryEnum.iconName)
                     .font(.labelSmall)
                     .foregroundStyle(.textSecondary)
@@ -222,7 +353,6 @@ struct ProfileCollectionCard: View {
                     if collection.likes.count > 0 {
                         Label("\(collection.likes.count)", systemImage: "heart")
                     }
-                    // ✅ FIXED: Safely unwrap optional items array
                     Label("\(collection.items?.count ?? 0)", systemImage: "square.stack.3d.up")
                 }
                 .font(.labelSmall)

@@ -9,6 +9,10 @@ struct ExploreView: View {
     
     @State private var viewModel: ExploreViewModel?
     @State private var showSearch = false
+    @State private var nlSearchText = ""
+    @State private var isNLSearching = false
+    @State private var nlSearchResults: [CollectionItem] = []
+    @State private var showNLResults = false
     
     var body: some View {
         @Bindable var bindableCoordinator = coordinator
@@ -29,56 +33,76 @@ struct ExploreView: View {
                     } else {
                         ScrollView {
                             VStack(spacing: Spacing.xLarge) {
-                                // Search Bar
-                                if showSearch {
-                                    SearchBarView(searchText: Binding(
-                                        get: { viewModel.searchText },
-                                        set: { viewModel.searchText = $0 }
-                                    ))
-                                    .padding(.horizontal, Spacing.large)
-                                    .transition(.move(edge: .top).combined(with: .opacity))
+                                // ✅ NATURAL LANGUAGE SEARCH BAR
+                                VStack(alignment: .leading, spacing: Spacing.small) {
+                                    Text("Search all collections")
+                                        .font(.labelMedium)
+                                        .foregroundStyle(.textSecondary)
+                                    
+                                    NaturalLanguageSearchBar(
+                                        searchText: $nlSearchText,
+                                        isSearching: $isNLSearching,
+                                        placeholder: "e.g., 'Find expensive sneakers'",
+                                        onSearch: performNLSearch
+                                    )
                                 }
+                                .padding(.horizontal, Spacing.large)
                                 
-                                // Categories Section
-                                CategoriesSection(
-                                    onCategoryTap: { category in
-                                        HapticManager.shared.light()
-                                        coordinator.navigate(to: .categoryBrowse(category))
+                                // ✅ SHOW NL SEARCH RESULTS IF ACTIVE
+                                if showNLResults {
+                                    nlSearchResultsSection
+                                } else {
+                                    // Regular Search Bar (keyword-based)
+                                    if showSearch {
+                                        SearchBarView(searchText: Binding(
+                                            get: { viewModel.searchText },
+                                            set: { viewModel.searchText = $0 }
+                                        ))
+                                        .padding(.horizontal, Spacing.large)
+                                        .transition(.move(edge: .top).combined(with: .opacity))
                                     }
-                                )
-                                
-                                // Trending Collections
-                                if !viewModel.trendingCollections.isEmpty {
-                                    CollectionSection(
-                                        title: "Trending",
-                                        collections: viewModel.trendingCollections,
-                                        onCollectionTap: { collection in
-                                            coordinator.navigate(to: .collectionDetail(collection.id))
+                                    
+                                    // Categories Section
+                                    CategoriesSection(
+                                        onCategoryTap: { category in
+                                            HapticManager.shared.light()
+                                            coordinator.navigate(to: .categoryBrowse(category))
                                         }
                                     )
-                                }
-                                
-                                // Recent Collections
-                                if !viewModel.recentCollections.isEmpty {
-                                    CollectionSection(
-                                        title: "Recently Updated",
-                                        collections: viewModel.recentCollections,
-                                        onCollectionTap: { collection in
-                                            coordinator.navigate(to: .collectionDetail(collection.id))
-                                        }
-                                    )
-                                }
-                                
-                                // All Collections
-                                if !viewModel.filteredCollections.isEmpty {
-                                    AllCollectionsSection(
-                                        collections: viewModel.filteredCollections,
-                                        onCollectionTap: { collection in
-                                            coordinator.navigate(to: .collectionDetail(collection.id))
-                                        }
-                                    )
-                                } else if viewModel.allCollections.isEmpty {
-                                    EmptyExploreView()
+                                    
+                                    // Trending Collections
+                                    if !viewModel.trendingCollections.isEmpty {
+                                        CollectionSection(
+                                            title: "Trending",
+                                            collections: viewModel.trendingCollections,
+                                            onCollectionTap: { collection in
+                                                coordinator.navigate(to: .collectionDetail(collection.id))
+                                            }
+                                        )
+                                    }
+                                    
+                                    // Recent Collections
+                                    if !viewModel.recentCollections.isEmpty {
+                                        CollectionSection(
+                                            title: "Recently Updated",
+                                            collections: viewModel.recentCollections,
+                                            onCollectionTap: { collection in
+                                                coordinator.navigate(to: .collectionDetail(collection.id))
+                                            }
+                                        )
+                                    }
+                                    
+                                    // All Collections
+                                    if !viewModel.filteredCollections.isEmpty {
+                                        AllCollectionsSection(
+                                            collections: viewModel.filteredCollections,
+                                            onCollectionTap: { collection in
+                                                coordinator.navigate(to: .collectionDetail(collection.id))
+                                            }
+                                        )
+                                    } else if viewModel.allCollections.isEmpty {
+                                        EmptyExploreView()
+                                    }
                                 }
                             }
                             .padding(.vertical, Spacing.medium)
@@ -98,12 +122,12 @@ struct ExploreView: View {
                 destinationView(for: destination)
             }
             .toolbar {
-                // ✅ NEW: Add sync status on the left
+                // Sync status on the left
                 ToolbarItem(placement: .topBarLeading) {
                     SyncStatusView()
                 }
                 
-                // Existing search button on the right
+                // Search button on the right
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         HapticManager.shared.selection()
@@ -130,6 +154,114 @@ struct ExploreView: View {
                 await viewModel?.loadAllCollections()
             }
         }
+    }
+    
+    // ✅ NL SEARCH RESULTS SECTION
+    private var nlSearchResultsSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.medium) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Search Results")
+                        .font(.headlineSmall.weight(.semibold))
+                        .foregroundStyle(.textPrimary)
+                    
+                    Text("\(nlSearchResults.count) items found across all collections")
+                        .font(.labelSmall)
+                        .foregroundStyle(.textSecondary)
+                }
+                
+                Spacer()
+                
+                Button {
+                    HapticManager.shared.light()
+                    clearNLSearch()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.caption)
+                        Text("Clear")
+                            .font(.labelMedium)
+                    }
+                    .foregroundStyle(Color.stashdPrimary)
+                }
+            }
+            .padding(.horizontal, Spacing.large)
+            
+            if nlSearchResults.isEmpty {
+                VStack(spacing: Spacing.medium) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 48))
+                        .foregroundStyle(.textTertiary)
+                    
+                    Text("No items match your search")
+                        .font(.bodyLarge)
+                        .foregroundStyle(.textSecondary)
+                    
+                    Text("Try different keywords or filters")
+                        .font(.bodySmall)
+                        .foregroundStyle(.textTertiary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.xLarge)
+            } else {
+                LazyVStack(spacing: Spacing.medium) {
+                    ForEach(nlSearchResults) { item in
+                        NavigationLink(destination: ItemDetailView(item: item)) {
+                            ItemRowCard(item: item)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, Spacing.large)
+            }
+        }
+    }
+    
+    // ✅ NL SEARCH ACTIONS
+    private func performNLSearch() {
+        guard !nlSearchText.isEmpty, let viewModel = viewModel else { return }
+        
+        Task {
+            isNLSearching = true
+            
+            do {
+                print("🔍 Starting NL search in Explore: '\(nlSearchText)'")
+                
+                // Parse natural language query
+                let query = try await NaturalLanguageSearchService.shared.parseQuery(nlSearchText)
+                
+                // Execute search across ALL public collections
+                let results = NaturalLanguageSearchService.shared.search(
+                    query: query,
+                    in: viewModel.allCollections,
+                    context: modelContext
+                )
+                
+                await MainActor.run {
+                    nlSearchResults = results
+                    showNLResults = true
+                    isNLSearching = false
+                    HapticManager.shared.success()
+                }
+                
+                print("✅ NL Search complete: \(results.count) items found")
+                
+            } catch {
+                await MainActor.run {
+                    isNLSearching = false
+                    showNLResults = true
+                    nlSearchResults = []
+                    HapticManager.shared.error()
+                }
+                print("❌ NL Search failed: \(error)")
+            }
+        }
+    }
+    
+    private func clearNLSearch() {
+        nlSearchText = ""
+        nlSearchResults = []
+        showNLResults = false
     }
     
     @ViewBuilder
@@ -282,7 +414,7 @@ struct HorizontalCollectionCard: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.small) {
-            // Cover Image - SUPER CLEAN NOW! ✨
+            // Cover Image
             if let coverURL = collection.coverImageURL {
                 CachedAsyncImage(url: coverURL)
                     .scaledToFill()
@@ -360,7 +492,7 @@ struct ExploreCollectionCard: View {
     
     var body: some View {
         HStack(spacing: Spacing.medium) {
-            // Thumbnail - SIMPLE! ✨
+            // Thumbnail
             if let coverURL = collection.coverImageURL {
                 CachedAsyncImage(url: coverURL)
                     .scaledToFill()
