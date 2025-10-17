@@ -216,9 +216,10 @@ final class SmartPriceService {
     // MARK: - Fetch Multi-Source Prices
 
     func fetchPrices(for item: CollectionItem) async throws -> MultiSourcePriceResult {
+        
+        print("🚨🚨🚨 NEW SMARTPRICESERVICE IS RUNNING 🚨🚨🚨")
+        
         let sources = determineSources(for: item)
-        
-        
         
         print("🔍 Fetching prices for: \(item.name)")
         print("📊 Sources to check: \(sources.count)")
