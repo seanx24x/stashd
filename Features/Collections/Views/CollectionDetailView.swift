@@ -358,7 +358,8 @@ struct CollectionDetailView: View {
         }
         .sheet(isPresented: $showAddItem) {
             AddItemView(collection: collection)
-                .environment(coordinator)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showInsights) {
             CollectionInsightsView(collection: collection)

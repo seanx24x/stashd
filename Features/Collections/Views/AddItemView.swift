@@ -2,7 +2,6 @@
 
 import SwiftUI
 import SwiftData
-import PhotosUI
 
 struct AddItemView: View {
     let collection: CollectionModel
