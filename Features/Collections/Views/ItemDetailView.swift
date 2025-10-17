@@ -257,7 +257,7 @@ struct ItemDetailView: View {
             }
         }
         .sheet(isPresented: $showPriceCheck) {
-            PriceCheckView(item: item)
+            MultiSourcePriceView(item: item)
         }
         .sheet(isPresented: $showEditSheet) {
             Text("Edit Item Coming Soon")
